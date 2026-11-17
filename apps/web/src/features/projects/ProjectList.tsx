@@ -243,6 +243,28 @@ function compactText(value: unknown) {
   return String(value);
 }
 
+function isEmptyDisplayValue(value: unknown) {
+  return value === null || value === undefined || value === '';
+}
+
+function displayText(value: unknown) {
+  return isEmptyDisplayValue(value) ? t('common.notFilled') : compactText(value);
+}
+
+function relationItems(value: unknown) {
+  if (isEmptyDisplayValue(value)) return [];
+  if (Array.isArray(value)) return value.map(compactText).filter(Boolean);
+  if (isRecordValue(value)) return Object.values(value).map(compactText).filter(Boolean);
+  return String(value)
+    .split(/[、,，\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isRelationField(fieldKey: string) {
+  return fieldKey === 'relationshipMap' || fieldKey === 'members' || fieldKey === 'locations' || fieldKey === 'traits' || fieldKey === 'abilities' || fieldKey.startsWith('related');
+}
+
 function isEmptyFilter(filter: FilterState) {
   return !filter.type && !filter.status && !filter.importance;
 }
@@ -589,9 +611,9 @@ export function ProjectList() {
     [projects, selectedId],
   );
 
-  async function handleCreate() {
+  async function handleCreate(selection?: Pick<CreateProjectInput, 'genreIds' | 'tagIds'>) {
     if (!formApi) return;
-    const values = await formApi.validate() as CreateProjectInput & { idea?: string };
+    const values = { ...(await formApi.validate() as CreateProjectInput & { idea?: string }), ...selection };
     setCreating(true);
     try {
       const created = await createProject(normalizeInput(values));
@@ -625,6 +647,14 @@ export function ProjectList() {
     }
   }
 
+  if (viewMode === 'workspace') {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 84px)' }}>
+        <Workspace project={selectedProject} activeSection={activeSection} onSectionChange={setActiveSection} onBack={() => setViewMode('shelf')} onProjectUpdate={handleProjectUpdate} onDelete={handleDelete} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 'calc(100vh - 84px)' }}>
       <aside style={{ background: 'var(--semi-color-bg-0)', border: '1px solid var(--semi-color-border)', borderRadius: 12, padding: 12 }}>
@@ -656,7 +686,6 @@ export function ProjectList() {
         {viewMode === 'create-choice' && <CreateChoice onManual={() => setViewMode('manual-create')} onAi={() => setViewMode('ai-create')} />}
         {viewMode === 'manual-create' && <ManualCreate genres={genres} tags={tags} setFormApi={setFormApi} creating={creating} onBack={() => setViewMode('create-choice')} onCreate={handleCreate} />}
         {viewMode === 'ai-create' && <AiCreatePlaceholder onBack={() => setViewMode('create-choice')} />}
-        {viewMode === 'workspace' && <Workspace project={selectedProject} activeSection={activeSection} onSectionChange={setActiveSection} onBack={() => setViewMode('shelf')} onProjectUpdate={handleProjectUpdate} onDelete={handleDelete} />}
         {viewMode === 'shelf' && <ShelfDetail project={selectedProject} onEnter={() => { setActiveSection('info'); selectedProject && setViewMode('workspace'); }} onDelete={handleDelete} />}
       </main>
     </div>
@@ -697,22 +726,42 @@ function CreateChoice({ onManual, onAi }: { onManual: () => void; onAi: () => vo
   );
 }
 
-function ManualCreate({ genres, tags, setFormApi, creating, onBack, onCreate }: { genres: TaxonomyItem[]; tags: TaxonomyItem[]; setFormApi: React.ComponentProps<typeof Form>['getFormApi']; creating: boolean; onBack: () => void; onCreate: () => void }) {
+function ManualCreate({ genres, tags, setFormApi, creating, onBack, onCreate }: { genres: TaxonomyItem[]; tags: TaxonomyItem[]; setFormApi: React.ComponentProps<typeof Form>['getFormApi']; creating: boolean; onBack: () => void; onCreate: (selection?: Pick<CreateProjectInput, 'genreIds' | 'tagIds'>) => void }) {
+  const [genreIds, setGenreIds] = useState<string[]>([]);
+  const [tagIds, setTagIds] = useState<string[]>([]);
+
+  function toggleValue(values: string[], id: string) {
+    return values.includes(id) ? values.filter((item) => item !== id) : [...values, id];
+  }
+
   return (
     <Card style={{ minHeight: 'calc(100vh - 84px)', borderRadius: 12 }} bodyStyle={{ padding: 24 }}>
       <Button icon={<IconArrowLeft />} onClick={onBack}>{t('projects.creation.back')}</Button>
       <Title heading={3}>{t('projects.creation.manualTitle')}</Title>
-      <Card style={{ maxWidth: 760, borderRadius: 12 }} bodyStyle={{ padding: 20 }}>
+      <Card style={{ maxWidth: 860, borderRadius: 12 }} bodyStyle={{ padding: 20 }}>
         <Form getFormApi={setFormApi} labelPosition="top">
           <Form.Input field="title" label={t('projects.creation.titleLabel')} placeholder={t('projects.creation.titlePlaceholder')} rules={[{ required: true, message: t('projects.creation.titleRequired') }]} />
-          <Form.Select field="genreIds" label={t('projects.creation.genreLabel')} placeholder={t('projects.creation.genrePlaceholder')} multiple maxTagCount={2}>{genres.map((genre) => <Select.Option key={genre.id} value={genre.id}>{genre.name}</Select.Option>)}</Form.Select>
-          <Form.Select field="tagIds" label={t('projects.creation.tagsLabel')} placeholder={t('projects.creation.tagsPlaceholder')} multiple maxTagCount={4}>{tags.map((tag) => <Select.Option key={tag.id} value={tag.id}>{tag.name}</Select.Option>)}</Form.Select>
+          <TaxonomyChoiceGroup title={t('projects.creation.genreLabel')} description={t('projects.creation.genrePlaceholder')} items={genres} selectedIds={genreIds} onToggle={(id) => setGenreIds((current) => toggleValue(current, id))} />
+          <TaxonomyChoiceGroup title={t('projects.creation.tagsLabel')} description={t('projects.creation.tagsPlaceholder')} items={tags} selectedIds={tagIds} onToggle={(id) => setTagIds((current) => toggleValue(current, id))} />
           <Form.TextArea field="summary" label={t('projects.creation.summaryLabel')} placeholder={t('projects.creation.summaryPlaceholder')} autosize={{ minRows: 3, maxRows: 5 }} />
           <Form.TextArea field="writingStyle" label={t('projects.creation.writingStyleLabel')} placeholder={t('projects.creation.writingStylePlaceholder')} autosize={{ minRows: 2, maxRows: 4 }} />
         </Form>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}><Button theme="solid" type="primary" loading={creating} onClick={onCreate}>{t('projects.creation.submit')}</Button></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}><Button theme="solid" type="primary" loading={creating} onClick={() => onCreate({ genreIds, tagIds })}>{t('projects.creation.submit')}</Button></div>
       </Card>
     </Card>
+  );
+}
+
+function TaxonomyChoiceGroup({ title, description, items, selectedIds, onToggle }: { title: string; description: string; items: TaxonomyItem[]; selectedIds: string[]; onToggle: (id: string) => void }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <Text strong style={{ display: 'block', marginBottom: 4 }}>{title}</Text>
+      <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 10 }}>{description}</Text>
+      {items.length === 0 ? <Text type="tertiary">{t('common.notFilled')}</Text> : <Space wrap spacing={8} style={{ rowGap: 8 }}>{items.map((item) => {
+        const selected = selectedIds.includes(item.id);
+        return <Button key={item.id} theme={selected ? 'solid' : 'light'} type={selected ? 'primary' : 'tertiary'} onClick={() => onToggle(item.id)}>{item.name}</Button>;
+      })}</Space>}
+    </div>
   );
 }
 
@@ -764,7 +813,13 @@ function ProjectHeader({ project, action, onDelete }: { project: Project; action
 }
 
 function ProjectShelfSummary({ project, genre }: { project: Project; genre?: TaxonomyItem }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', gap: 24, marginTop: 20 }}><div><section style={{ marginBottom: 24 }}><Title heading={5}>{t('projects.detail.intro')}</Title><Paragraph spacing="extended">{project.summary || t('common.notFilled')}</Paragraph></section><section><Title heading={5}>{t('projects.detail.writingStyle')}</Title><Paragraph spacing="extended">{project.writingStyle || t('common.notFilled')}</Paragraph></section></div><aside style={{ borderLeft: '1px solid var(--semi-color-border)', paddingLeft: 24 }}><Space vertical align="start" spacing={16}><div><Text type="tertiary" style={{ display: 'block' }}>{t('projects.creation.genreLabel')}</Text><Text>{genre?.name || t('projects.detail.noGenre')}</Text></div><div><Text type="tertiary" style={{ display: 'block' }}>{t('projects.detail.createdAt')}</Text><Text>{formatDate(project.createdAt)}</Text></div><div><Text type="tertiary" style={{ display: 'block' }}>{t('projects.detail.updatedAt')}</Text><Text>{formatDate(project.updatedAt)}</Text></div></Space></aside></div>;
+  const metaItems = [
+    { label: t('projects.creation.genreLabel'), value: genre?.name || t('projects.detail.noGenre') },
+    { label: t('projects.detail.createdAt'), value: formatDate(project.createdAt) },
+    { label: t('projects.detail.updatedAt'), value: formatDate(project.updatedAt) },
+  ];
+
+  return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 20, marginTop: 18 }}><div style={{ display: 'grid', gap: 12 }}><section style={{ padding: 16, border: '1px solid var(--semi-color-border)', borderRadius: 12, background: 'var(--semi-color-bg-0)' }}><Title heading={5} style={{ margin: '0 0 8px' }}>{t('projects.detail.intro')}</Title><Paragraph type={project.summary ? undefined : 'tertiary'} style={{ whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.7 }}>{displayText(project.summary)}</Paragraph></section><section style={{ padding: 16, border: '1px solid var(--semi-color-border)', borderRadius: 12, background: 'var(--semi-color-bg-0)' }}><Title heading={5} style={{ margin: '0 0 8px' }}>{t('projects.detail.writingStyle')}</Title><Paragraph type={project.writingStyle ? undefined : 'tertiary'} style={{ whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.7 }}>{displayText(project.writingStyle)}</Paragraph></section></div><aside style={{ display: 'grid', gap: 10, alignContent: 'start' }}>{metaItems.map((item) => <div key={item.label} style={{ padding: '10px 12px', border: '1px solid var(--semi-color-border)', borderRadius: 10, background: 'var(--semi-color-fill-0)' }}><Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 4 }}>{item.label}</Text><Text strong={item.label === t('projects.creation.genreLabel')}>{item.value}</Text></div>)}</aside></div>;
 }
 
 function ProjectInfoPanel({ project, onSave, onDelete }: { project: Project; onSave: (input: UpdateProjectInput) => Promise<void>; onDelete: (id: string) => void }) {
@@ -888,7 +943,6 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string>();
   const [query, setQuery] = useState('');
-  const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState<FilterState>({});
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1036,14 +1090,16 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
   }
 
   return <ModuleShell title={config.title} description={config.description} action={<Button theme="solid" type="primary" icon={<IconPlus />} onClick={handleAdd}>{config.addLabel}</Button>}>
-    <Card style={{ borderRadius: 12, marginBottom: 16 }} bodyStyle={{ padding: 16 }}>
-      <Space vertical align="start" style={{ width: '100%' }}>
-        <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Input prefix={<IconSearch />} placeholder={t('modules.searchPlaceholder')} value={query} onChange={setQuery} style={{ width: 320 }} />
-          <Space><Button onClick={() => setFilterOpen((open) => !open)}>{t('actions.filter')}</Button>{(!isEmptyFilter(filter) || query) ? <Button theme="borderless" onClick={clearFilter}>{t('actions.clear')}</Button> : null}</Space>
-        </Space>
-        <Space wrap>{filter.type ? <Tag closable onClose={() => setFilter((current) => ({ ...current, type: undefined }))}>{t('modules.typeFilter')}: {filter.type}</Tag> : null}{filter.status ? <Tag closable onClose={() => setFilter((current) => ({ ...current, status: undefined }))}>{t('modules.statusFilter')}: {filter.status}</Tag> : null}{filter.importance ? <Tag closable onClose={() => setFilter((current) => ({ ...current, importance: undefined }))}>{t('modules.importanceFilter')}: {filter.importance}</Tag> : null}</Space>
-        {filterOpen ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 200px)', gap: 12 }}><Select placeholder={t('modules.typeFilter')} value={filter.type} onChange={(value) => setFilter((current) => ({ ...current, type: value as string }))} showClear>{typeOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select><Select placeholder={t('modules.statusFilter')} value={filter.status} onChange={(value) => setFilter((current) => ({ ...current, status: value as string }))} showClear>{statusOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select><Select placeholder={t('modules.importanceFilter')} value={filter.importance} onChange={(value) => setFilter((current) => ({ ...current, importance: value as string }))} showClear><Select.Option value="high">7+</Select.Option><Select.Option value="normal">0-6</Select.Option></Select></div> : null}
+    <Card style={{ borderRadius: 12, marginBottom: 16 }} bodyStyle={{ padding: 12 }}>
+      <Space wrap spacing={8} style={{ width: '100%', rowGap: 8 }}>
+        <Input prefix={<IconSearch />} placeholder={t('modules.searchPlaceholder')} value={query} onChange={setQuery} style={{ width: 260 }} />
+        <Select placeholder={t('modules.typeFilter')} value={filter.type} onChange={(value) => setFilter((current) => ({ ...current, type: value as string }))} showClear style={{ width: 160 }}>{typeOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select>
+        <Select placeholder={t('modules.statusFilter')} value={filter.status} onChange={(value) => setFilter((current) => ({ ...current, status: value as string }))} showClear style={{ width: 140 }}>{statusOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select>
+        <Select placeholder={t('modules.importanceFilter')} value={filter.importance} onChange={(value) => setFilter((current) => ({ ...current, importance: value as string }))} showClear style={{ width: 140 }}><Select.Option value="high">7+</Select.Option><Select.Option value="normal">0-6</Select.Option></Select>
+        {filter.type ? <Tag closable onClose={() => setFilter((current) => ({ ...current, type: undefined }))}>{t('modules.typeFilter')}: {filter.type}</Tag> : null}
+        {filter.status ? <Tag closable onClose={() => setFilter((current) => ({ ...current, status: undefined }))}>{t('modules.statusFilter')}: {filter.status}</Tag> : null}
+        {filter.importance ? <Tag closable onClose={() => setFilter((current) => ({ ...current, importance: undefined }))}>{t('modules.importanceFilter')}: {filter.importance}</Tag> : null}
+        {(!isEmptyFilter(filter) || query) ? <Button theme="borderless" onClick={clearFilter}>{t('actions.clear')}</Button> : null}
       </Space>
     </Card>
     <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 16 }}>
@@ -1062,7 +1118,17 @@ function ModuleShell({ title, description, action, children }: { title: string; 
 }
 
 function GroupedDetails({ groups, values }: { groups: DetailGroup[]; values: Record<string, unknown> }) {
-  return <Space vertical align="start" spacing={20} style={{ width: '100%' }}>{groups.map((group) => <section key={group.title} style={{ width: '100%' }}><Title heading={5} style={{ marginBottom: 12 }}>{group.title}</Title><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>{group.fields.map((field) => <div key={field.key} style={{ gridColumn: field.long ? '1 / -1' : undefined }}><Text type="tertiary" style={{ display: 'block', marginBottom: 4 }}>{field.label}</Text><Paragraph spacing="extended" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{compactText(values[field.key])}</Paragraph></div>)}</div></section>)}</Space>;
+  return <div style={{ display: 'grid', gap: 16 }}>{groups.map((group) => <section key={group.title} style={{ width: '100%', padding: '2px 0 14px', borderBottom: '1px solid var(--semi-color-border)' }}><Title heading={5} style={{ margin: '0 0 10px' }}>{group.title}</Title><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', columnGap: 24, rowGap: 14 }}>{group.fields.map((field) => <DetailCard key={field.key} field={field} value={values[field.key]} />)}</div></section>)}</div>;
+}
+
+function DetailCard({ field, value }: { field: DetailField; value: unknown }) {
+  const empty = isEmptyDisplayValue(value);
+  const relation = isRelationField(field.key);
+  const items = relationItems(value);
+  const text = displayText(value);
+  const shouldSpan = relation ? items.length > 2 : Boolean(field.long && !empty && text.length > 48);
+
+  return <div style={{ gridColumn: shouldSpan ? '1 / -1' : undefined, minWidth: 0, padding: shouldSpan ? '2px 0 8px' : '2px 0 6px' }}><Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 4, lineHeight: 1.35 }}>{field.label}</Text>{relation && items.length > 0 ? <Space wrap spacing={6} style={{ rowGap: 6 }}>{items.map((item) => <Tag key={item} size="small">{item}</Tag>)}</Space> : <Paragraph type={empty ? 'tertiary' : undefined} ellipsis={!shouldSpan ? { rows: 2, showTooltip: true } : undefined} style={{ whiteSpace: shouldSpan ? 'pre-wrap' : undefined, margin: 0, lineHeight: 1.55 }}>{text}</Paragraph>}</div>;
 }
 
 function GroupedForm({ groups, nameLabel, namePlaceholder, longFields }: { groups: DetailGroup[]; nameLabel?: string; namePlaceholder?: string; longFields?: Set<string> }) {
