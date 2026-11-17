@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+.DS_Store
+*.log
+.pnpm-store/
+apps/api/prisma/migrations/dev.db
+.alma-snapshots
+.local/
+apps/api/.local/

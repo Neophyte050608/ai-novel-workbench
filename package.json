@@ -1,0 +1,26 @@
+{
+  "name": "ai-novel-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI 小说生成/创作工作台 monorepo",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:web": "pnpm --filter @ai-novel/web dev",
+    "dev:api": "pnpm --filter @ai-novel/api dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:migrate": "pnpm --filter @ai-novel/api prisma:migrate",
+    "db:generate": "pnpm --filter @ai-novel/api prisma:generate",
+    "start:dev": "./scripts/dev.sh",
+    "stop": "./scripts/stop.sh",
+    "doctor": "./scripts/doctor.sh",
+    "db:studio": "pnpm --filter @ai-novel/api prisma studio",
+    "db:deploy": "pnpm --filter @ai-novel/api prisma migrate deploy",
+    "db:seed": "pnpm --filter @ai-novel/api exec prisma db seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
