@@ -169,11 +169,11 @@ P0 运行环境与规范
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| INFO-1 | 信息页分组布局 | 待做 | 四组信息清晰展示 |
-| INFO-2 | 字段编辑 | 待做 | 字段可修改并保存 |
-| INFO-3 | 类型/标签编辑 | 待做 | 关联表更新正确 |
-| INFO-4 | 字段级展示组件 | 待做 | FieldBlock 可复用 |
-| INFO-5 | AI 改写占位规则 | 后置 | 模型未接入时不显示假按钮 |
+| INFO-1 | 信息页分组布局 | 已做 | 工作台内小说信息按基础信息、创意设定、风格与篇幅分组展示 |
+| INFO-2 | 字段编辑 | 已做 | 工作台内小说信息可编辑并通过 Project PATCH 保存 |
+| INFO-3 | 类型/标签编辑 | 部分已做 | 新建小说使用 Genre/Tag 有限表平铺多选；工作台内类型/标签编辑后续补齐 |
+| INFO-4 | 字段级展示组件 | 部分已做 | 当前实体查看态已有统一分组/字段展示，后续可抽独立 FieldBlock 组件 |
+| INFO-5 | AI 改写占位规则 | 已遵守 | 模型未接入时不显示可执行 AI 改写按钮 |
 
 ---
 
@@ -194,11 +194,12 @@ P0 运行环境与规范
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| CHAR-1 | 人物列表 | 待做 | 可查看当前项目人物 |
-| CHAR-2 | 新建人物 | 待做 | 创建后带 projectId |
-| CHAR-3 | 人物详情 | 待做 | 展示基础档案 |
-| CHAR-4 | 人物状态记录 | 待做 | 可新增状态快照 |
-| CHAR-5 | 关系管理 | P2 | 使用 Relationship 关联人物 |
+| CHAR-1 | 人物列表 | 已做 | 工作台人物模块可查看当前项目人物，后端按 projectId 查询 |
+| CHAR-2 | 新建人物 | 已做 | 人物创建写入 projectId，默认 draft，支持 sourceType/sourceId |
+| CHAR-3 | 人物详情 | 已做 | 展示基础档案并支持查看/编辑态切换 |
+| CHAR-4 | 人物状态记录 | API 已做 | CharacterState API 已完成；前端完整状态编辑 UI 后续细化 |
+| CHAR-5 | 人物身份记录 | API 已做 | CharacterIdentity API 已完成；前端完整身份编辑 UI 后续细化 |
+| CHAR-6 | 关系管理 | P2 | 使用 Relationship 关联人物，不塞自由 JSON |
 
 ---
 
@@ -225,16 +226,40 @@ P0 运行环境与规范
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| WORLD-DOC-1 | 世界观实体拆分文档 | 初版已做 | `world-items.md` 明确 WorldItem 收窄与一等实体方向，不代表实现完成 |
-| WORLD-LOC-1 | Location 模块设计 | 初版已做 | 明确地点职责边界、字段方向、Relationship 关系，不代表实现完成 |
-| WORLD-FAC-1 | Faction 模块设计 | 初版已做 | 明确势力职责边界、字段方向、Relationship 关系，不代表实现完成 |
-| WORLD-SPEC-1 | Species 模块设计 | 初版已做 | 明确物种职责边界、字段方向、Relationship 关系，不代表实现完成 |
-| WORLD-ITEM-1 | StoryItem 模块设计 | 初版已做 | 明确剧情道具职责边界、字段方向、Relationship 关系，不代表实现完成 |
-| WORLD-RULE-1 | WorldRule 模块设计 | 初版已做 | 明确规则职责边界、字段方向、Relationship 关系，不代表实现完成 |
-| WORLD-GEN-1 | WorldItem 通用设定列表 | 待做 | 可查看通用世界设定，避免混入一等实体 |
-| WORLD-GEN-2 | WorldItem 新建通用设定 | 待做 | 支持体系/历史/文化/概念/社会制度/自定义等通用类型 |
-| WORLD-GEN-3 | WorldItem 详情与 canonStatus | 待做 | 展示 summary/content 并可切换 draft/confirmed/archived |
-| WORLD-REL-1 | 世界观 Relationship 连接策略 | P2 | 可连接角色、地点、势力、物种、道具、规则和通用设定 |
+| WORLD-DOC-1 | 世界观实体拆分文档 | 已做 | `world-items.md` 明确 WorldItem 收窄与一等实体方向 |
+| WORLD-RULE-1 | WorldRule 模块设计 | 已做 | 明确规则职责边界、字段方向、非规则引擎边界 |
+| WORLD-RULE-2 | WorldRule schema/migration | 已做 | WorldRule 已进入 Prisma schema 并完成 migration 文档 |
+| WORLD-RULE-3 | WorldRule 基础 API | 已做 | 支持列表、新建、详情、编辑、软删除、confirm/archive |
+| WORLD-RULE-4 | WorldRule 基础 UI 接入 | 已做 | 工作台世界规则模块接入真实 API，支持基础查看/编辑 |
+| WORLD-LOC-1 | Location 模块设计 | 已做 | 明确 Location/LocationState/LocationRule/LocationFaction 职责边界 |
+| WORLD-LOC-2 | Location schema/migration | 已做 | Location 相关模型已进入 Prisma schema 并完成 migration 文档 |
+| WORLD-LOC-3 | Location 基础 API | 已做 | 支持 Location、State、Rule、Faction 关联基础 API 和 profile |
+| WORLD-LOC-4 | Location 基础 UI 接入 | 已做 | 工作台地点模块接入真实 API，支持基础查看/编辑 |
+| WORLD-FAC-1 | Faction 模块设计 | 已做 | 明确 Faction/State/Membership/Relation/Rule 职责边界 |
+| WORLD-FAC-2 | Faction schema/migration | 已做 | Faction 相关模型已进入 Prisma schema 并完成 migration 文档 |
+| WORLD-FAC-3 | Faction 基础 API | 已做 | 支持 Faction、State、Membership、Relation、Rule 基础 API 和 profile |
+| WORLD-FAC-4 | Faction 基础 UI 接入 | 已做 | 工作台势力模块接入真实 API，支持基础查看/编辑 |
+| WORLD-SPEC-1 | Species 模块设计 | 已做 | 明确 Species/Trait/Ability/Rule 职责边界，未拆 SpeciesLocation |
+| WORLD-SPEC-2 | Species schema/migration | 已做 | Species 相关模型已进入 Prisma schema 并完成 migration 文档 |
+| WORLD-SPEC-3 | Species 基础 API | 已做 | 支持 Species、Trait、Ability、Rule 基础 API 和 profile |
+| WORLD-SPEC-4 | Species 基础 UI 接入 | 已做 | 工作台物种模块接入真实 API，支持基础查看/编辑 |
+| WORLD-ITEM-1 | StoryItem 模块设计 | 待做 | 明确剧情道具职责边界、字段、规则/关系策略 |
+| WORLD-ITEM-2 | StoryItem schema/migration | 待做 | 剧情道具作为一等实体进入 Prisma schema |
+| WORLD-ITEM-3 | StoryItem 基础 API | 待做 | 支持剧情道具基础 CRUD、confirm/archive、profile |
+| WORLD-ITEM-4 | StoryItem 基础 UI | 待做 | 工作台内新增剧情道具模块，支持人工维护 |
+| WORLD-GEN-1 | WorldItem 通用设定收窄 | 待做 | 将 WorldItem 明确为体系/历史/文化/概念/社会制度等通用设定 |
+| WORLD-GEN-2 | WorldItem 通用设定 API/UI | 待做 | 可查看/新建/编辑通用世界设定，避免混入一等实体 |
+| WORLD-SUB-1 | 子资源完整 UI | 待做 | 细化地点规则/地点势力、势力成员/关系/规则、物种特征/能力/规则的新增编辑 UI |
+| WORLD-REL-1 | Relationship 连接策略落地 | P2 | 可连接角色、地点、势力、物种、道具、规则和通用设定 |
+
+## 当前实体地基收尾任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| ENTITY-QA-1 | 已有实体 API 冒烟测试 | 已做 | 已运行 Character/Location/Faction/Species/WorldRule 现有 service specs；覆盖 list/create/update/delete/profile 等基础链路 |
+| ENTITY-QA-2 | 前端工作台人工录入冒烟 | 基础已做 | 已完成静态/构建验证：新建小说可进入工作台，工作台包含小说信息、人物、地点、势力、物种、世界规则；未声明人工全量验收 |
+| ENTITY-DOC-1 | 实体实现状态文档同步 | 已做 | task-breakdown 已同步实体实现状态，未实现 StoryItem/WorldItem 通用设定等仍标待做 |
+| ENTITY-COMMIT-1 | 阶段提交 | 已做 | 通过 entity service specs、typecheck、build 后提交并推送到远程仓库 |
 
 ---
 

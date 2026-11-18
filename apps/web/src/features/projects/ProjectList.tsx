@@ -71,7 +71,7 @@ import type {
 } from './types';
 
 const { Title, Text, Paragraph } = Typography;
-type ViewMode = 'shelf' | 'create-choice' | 'manual-create' | 'ai-create' | 'workspace';
+type ViewMode = 'shelf' | 'manual-create' | 'workspace';
 type WorkspaceSection = 'info' | 'characters' | 'locations' | 'factions' | 'species' | 'rules';
 type FormApi = Parameters<NonNullable<React.ComponentProps<typeof Form>['getFormApi']>>[0];
 type ModuleKind = Exclude<WorkspaceSection, 'info'>;
@@ -658,7 +658,7 @@ export function ProjectList() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 'calc(100vh - 84px)' }}>
       <aside style={{ background: 'var(--semi-color-bg-0)', border: '1px solid var(--semi-color-border)', borderRadius: 12, padding: 12 }}>
-        <Button block theme="solid" type="primary" icon={<IconPlus />} onClick={() => setViewMode('create-choice')}>
+        <Button block theme="solid" type="primary" icon={<IconPlus />} onClick={() => setViewMode('manual-create')}>
           {t('actions.create')}
         </Button>
         <Text type="tertiary" style={{ display: 'block', margin: '12px 0 8px' }}>{t('projects.count', { count: projects.length })}</Text>
@@ -683,46 +683,10 @@ export function ProjectList() {
         )}
       </aside>
       <main>
-        {viewMode === 'create-choice' && <CreateChoice onManual={() => setViewMode('manual-create')} onAi={() => setViewMode('ai-create')} />}
-        {viewMode === 'manual-create' && <ManualCreate genres={genres} tags={tags} setFormApi={setFormApi} creating={creating} onBack={() => setViewMode('create-choice')} onCreate={handleCreate} />}
-        {viewMode === 'ai-create' && <AiCreatePlaceholder onBack={() => setViewMode('create-choice')} />}
+        {viewMode === 'manual-create' && <ManualCreate genres={genres} tags={tags} setFormApi={setFormApi} creating={creating} onBack={() => setViewMode('shelf')} onCreate={handleCreate} />}
         {viewMode === 'shelf' && <ShelfDetail project={selectedProject} onEnter={() => { setActiveSection('info'); selectedProject && setViewMode('workspace'); }} onDelete={handleDelete} />}
       </main>
     </div>
-  );
-}
-
-function CreateChoice({ onManual, onAi }: { onManual: () => void; onAi: () => void }) {
-  const choiceStyle = {
-    width: '100%',
-    textAlign: 'left' as const,
-    background: 'transparent',
-    border: 0,
-    padding: 0,
-    cursor: 'pointer',
-  };
-
-  return (
-    <Card style={{ minHeight: 'calc(100vh - 84px)', borderRadius: 12 }} bodyStyle={{ padding: 24 }}>
-      <Title heading={3}>{t('projects.createChoice.title')}</Title>
-      <Text type="tertiary">{t('projects.createChoice.subtitle')}</Text>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 24 }}>
-        <button type="button" onClick={onManual} style={choiceStyle}>
-          <Card style={{ borderRadius: 12, height: '100%' }}>
-            <Title heading={4}>{t('projects.createChoice.manualTitle')}</Title>
-            <Paragraph type="secondary">{t('projects.createChoice.manualDesc')}</Paragraph>
-            <Button theme="solid" type="primary">{t('projects.createChoice.manualTitle')}</Button>
-          </Card>
-        </button>
-        <button type="button" onClick={onAi} style={choiceStyle}>
-          <Card style={{ borderRadius: 12, height: '100%' }}>
-            <Title heading={4}>{t('projects.createChoice.aiTitle')}</Title>
-            <Paragraph type="secondary">{t('projects.createChoice.aiDesc')}</Paragraph>
-            <Tag color="amber">{t('projects.createChoice.comingSoon')}</Tag>
-          </Card>
-        </button>
-      </div>
-    </Card>
   );
 }
 
@@ -762,18 +726,6 @@ function TaxonomyChoiceGroup({ title, description, items, selectedIds, onToggle 
         return <Button key={item.id} theme={selected ? 'solid' : 'light'} type={selected ? 'primary' : 'tertiary'} onClick={() => onToggle(item.id)}>{item.name}</Button>;
       })}</Space>}
     </div>
-  );
-}
-
-function AiCreatePlaceholder({ onBack }: { onBack: () => void }) {
-  return (
-    <Card style={{ minHeight: 'calc(100vh - 84px)', borderRadius: 12 }} bodyStyle={{ padding: 24 }}>
-      <Button icon={<IconArrowLeft />} onClick={onBack}>{t('projects.creation.back')}</Button>
-      <Title heading={3}>{t('projects.creation.aiTitle')}</Title>
-      <Paragraph type="secondary">{t('projects.creation.aiSubtitle')}</Paragraph>
-      <Form labelPosition="top" style={{ maxWidth: 760 }}><Form.TextArea field="idea" label={t('projects.creation.ideaLabel')} placeholder={t('projects.creation.ideaPlaceholder')} autosize={{ minRows: 6, maxRows: 10 }} disabled /></Form>
-      <Tag color="amber">{t('projects.createChoice.comingSoon')}</Tag>
-    </Card>
   );
 }
 
