@@ -243,22 +243,29 @@ P0 运行环境与规范
 | WORLD-SPEC-2 | Species schema/migration | 已做 | Species 相关模型已进入 Prisma schema 并完成 migration 文档 |
 | WORLD-SPEC-3 | Species 基础 API | 已做 | 支持 Species、Trait、Ability、Rule 基础 API 和 profile |
 | WORLD-SPEC-4 | Species 基础 UI 接入 | 已做 | 工作台物种模块接入真实 API，支持基础查看/编辑 |
-| WORLD-ITEM-1 | StoryItem 模块设计 | 待做 | 明确剧情道具职责边界、字段、规则/关系策略 |
-| WORLD-ITEM-2 | StoryItem schema/migration | 待做 | 剧情道具作为一等实体进入 Prisma schema |
-| WORLD-ITEM-3 | StoryItem 基础 API | 待做 | 支持剧情道具基础 CRUD、confirm/archive、profile |
-| WORLD-ITEM-4 | StoryItem 基础 UI | 待做 | 工作台内新增剧情道具模块，支持人工维护 |
-| WORLD-GEN-1 | WorldItem 通用设定收窄 | 待做 | 将 WorldItem 明确为体系/历史/文化/概念/社会制度等通用设定 |
-| WORLD-GEN-2 | WorldItem 通用设定 API/UI | 待做 | 可查看/新建/编辑通用世界设定，避免混入一等实体 |
+| WORLD-ITEM-1 | 能力与道具模块设计 | 已做 | 明确 StoryItem/Ability 职责边界、共享字段、规则/关系策略 |
+| WORLD-ITEM-2 | 能力与道具 schema/migration | 待做 | StoryItem/Ability 作为一等实体进入 Prisma schema |
+| WORLD-ITEM-3 | 能力与道具基础 API | 待做 | 支持 StoryItem/Ability 基础 CRUD、confirm/archive、profile |
+| WORLD-ITEM-4 | 能力与道具基础 UI | 待做 | 工作台内新增能力与道具模块，支持道具/技能人工维护 |
+| WORLD-GEN-1 | WorldItem 通用设定收窄 | 已做 | WorldItem 已明确收窄为体系/历史/文化/概念/社会制度等通用设定；保留旧 enum 值且不自动迁移历史数据 |
+| WORLD-GEN-2 | WorldItem 通用设定 API/UI | 已做 | 可查看/新建/编辑通用世界设定，新建类型限制为 system/history/culture/concept/social_system/custom，避免混入一等实体 |
 | WORLD-SUB-1 | 子资源完整 UI | 待做 | 细化地点规则/地点势力、势力成员/关系/规则、物种特征/能力/规则的新增编辑 UI |
-| WORLD-REL-1 | Relationship 连接策略落地 | P2 | 可连接角色、地点、势力、物种、道具、规则和通用设定 |
+| WORLD-REL-1 | Relationship 连接策略落地 | 已做 | 可连接角色、地点、势力、物种、道具、规则和通用设定 |
 
 ## 当前实体地基收尾任务
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| ENTITY-QA-1 | 已有实体 API 冒烟测试 | 已做 | 已运行 Character/Location/Faction/Species/WorldRule 现有 service specs；覆盖 list/create/update/delete/profile 等基础链路 |
-| ENTITY-QA-2 | 前端工作台人工录入冒烟 | 基础已做 | 已完成静态/构建验证：新建小说可进入工作台，工作台包含小说信息、人物、地点、势力、物种、世界规则；未声明人工全量验收 |
-| ENTITY-DOC-1 | 实体实现状态文档同步 | 已做 | task-breakdown 已同步实体实现状态，未实现 StoryItem/WorldItem 通用设定等仍标待做 |
+| ENTITY-REL-1 | Relationship 设计收口 | 已做 | `docs/modules/relationships.md` 明确跨实体关系的 source/target 类型、relationType 建议值、方向、证据、生命周期和 Context Builder 读取方式 |
+| ENTITY-REL-2 | Relationship 基础 API | 已做 | 支持按项目、按实体查询关系，创建/编辑/删除关系，校验 source/target 同 project，并实现 confirm/archive 与弱重复检测 |
+| ENTITY-REL-3 | Relationship 基础 UI | 已做 | 各实体详情关系区可新增/删除关系，并在关系另一侧可见；编辑关系可后续细化 |
+| ENTITY-SUB-1 | 子资源 UI 设计收口 | 待做 | 明确人物状态/身份、地点规则/势力、势力成员/关系/规则、物种特征/能力/规则、道具状态/规则、能力规则的统一交互模式 |
+| ENTITY-SUB-2 | 高频子资源 UI | 待做 | 优先实现人物状态/身份、地点规则/势力、势力成员、物种能力、道具状态的新增/编辑/删除 |
+| ENTITY-WORLD-1 | WorldItem 收窄方案 | 已做 | 已明确保留/废弃类型、历史兼容策略、不迁移旧数据、通用设定类型范围 |
+| ENTITY-WORLD-2 | WorldItem 通用设定 API/UI | 已做 | 支持体系/历史/文化/概念/社会制度等通用设定的基础人工维护，并限制新建类型白名单 |
+| ENTITY-QA-1 | 已有实体 API 冒烟测试 | 已做 | 已运行 Character/Location/Faction/Species/WorldRule/StoryItem/Ability 现有 service specs；覆盖 list/create/update/delete/profile 等基础链路 |
+| ENTITY-QA-2 | 前端工作台人工录入冒烟 | 基础已做 | 已完成静态/构建验证：新建小说可进入工作台，工作台包含小说信息、人物、地点、势力、物种、世界规则、能力与道具；未声明人工全量验收 |
+| ENTITY-DOC-1 | 实体实现状态文档同步 | 已做 | task-breakdown 已同步实体实现状态，未实现 Relationship/子资源 UI/WorldItem 通用设定等仍标待做 |
 | ENTITY-COMMIT-1 | 阶段提交 | 已做 | 通过 entity service specs、typecheck、build 后提交并推送到远程仓库 |
 
 ---

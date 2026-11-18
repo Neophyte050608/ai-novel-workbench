@@ -3,6 +3,12 @@ import { Prisma } from '@prisma/client';
 
 type HttpRequest = { url: string };
 type HttpResponse = { status: (statusCode: number) => { json: (body: unknown) => void } };
+type HttpExceptionLike = {
+  name?: string;
+  message?: string;
+  getStatus: () => number;
+  getResponse: () => unknown;
+};
 
 type ErrorBody = {
   success: false;
@@ -13,23 +19,37 @@ type ErrorBody = {
   };
 };
 
-function normalizeHttpResponse(exception: HttpException): { code: string; message: string; details?: unknown } {
+function isHttpExceptionLike(exception: unknown): exception is HttpExceptionLike {
+  return exception instanceof HttpException || (
+    exception !== null
+    && typeof exception === 'object'
+    && typeof (exception as Record<string, unknown>).getStatus === 'function'
+    && typeof (exception as Record<string, unknown>).getResponse === 'function'
+  );
+}
+
+function normalizeHttpResponse(exception: HttpExceptionLike): { code: string; message: string; details?: unknown } {
   const response = exception.getResponse();
+  const exceptionName = exception.name ?? 'HttpException';
+  const exceptionMessage = exception.message ?? 'Request failed';
+  if (exception.getStatus() === HttpStatus.INTERNAL_SERVER_ERROR && exception.message && exception.message !== 'Internal server error') {
+    return { code: exceptionName, message: exception.message };
+  }
   if (typeof response === 'string') {
-    return { code: exception.name, message: response };
+    return { code: exceptionName, message: response };
   }
 
   if (response && typeof response === 'object') {
     const payload = response as Record<string, unknown>;
-    const message = Array.isArray(payload.message) ? payload.message.join('; ') : typeof payload.message === 'string' ? payload.message : exception.message;
+    const message = Array.isArray(payload.message) ? payload.message.join('; ') : typeof payload.message === 'string' ? payload.message : exceptionMessage;
     return {
-      code: typeof payload.error === 'string' ? payload.error : exception.name,
+      code: typeof payload.error === 'string' ? payload.error : exceptionName,
       message,
       details: payload.message,
     };
   }
 
-  return { code: exception.name, message: exception.message };
+  return { code: exceptionName, message: exceptionMessage };
 }
 
 @Catch()
@@ -48,7 +68,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       },
     };
 
-    if (exception instanceof HttpException) {
+    if (isHttpExceptionLike(exception)) {
       status = exception.getStatus();
       body = {
         success: false,

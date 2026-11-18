@@ -13,6 +13,10 @@ import { WorldRulesModule } from './modules/world-rules/world-rules.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { FactionsModule } from './modules/factions/factions.module';
 import { SpeciesModule } from './modules/species/species.module';
+import { StoryItemsModule } from './modules/story-items/story-items.module';
+import { AbilitiesModule } from './modules/abilities/abilities.module';
+import { RelationshipsModule } from './modules/relationships/relationships.module';
+import { WorldItemsModule } from './modules/world-items/world-items.module';
 
 @Module({
   imports: [
@@ -30,6 +34,10 @@ import { SpeciesModule } from './modules/species/species.module';
     LocationsModule,
     FactionsModule,
     SpeciesModule,
+    StoryItemsModule,
+    AbilitiesModule,
+    RelationshipsModule,
+    WorldItemsModule,
   ],
 })
 export class AppModule {}

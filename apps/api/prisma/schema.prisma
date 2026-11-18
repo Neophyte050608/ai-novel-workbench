@@ -77,6 +77,10 @@ enum WorldItemType {
   character_note
   timeline_event
   species
+  system
+  culture
+  concept
+  social_system
   custom
 }
 
@@ -138,6 +142,11 @@ model Project {
   speciesTraits       SpeciesTrait[]
   speciesAbilities    SpeciesAbility[]
   speciesRules        SpeciesRule[]
+  storyItems          StoryItem[]
+  storyItemStates     StoryItemState[]
+  storyItemRules      StoryItemRule[]
+  abilities           Ability[]
+  abilityRules        AbilityRule[]
 
   @@index([status])
   @@index([deletedAt])
@@ -247,6 +256,7 @@ model Chapter {
   generationTasks GenerationTask[]
   locationStates  LocationState[]
   factionStates   FactionState[]
+  storyItemStates StoryItemState[]
 
   @@index([projectId, orderIndex])
   @@index([volumeId, orderIndex])
@@ -407,8 +417,11 @@ model WorldItem {
   summary     String?
   content     String?
   tags        String[]      @default([])
+  visibility  String?
   importance  Int           @default(0)
   canonStatus CanonStatus   @default(draft)
+  sourceType  String?
+  sourceId    String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   deletedAt   DateTime?
@@ -446,10 +459,12 @@ model WorldRule {
   updatedAt            DateTime    @updatedAt
   deletedAt            DateTime?
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  locationRules LocationRule[]
-  factionRules  FactionRule[]
-  speciesRules  SpeciesRule[]
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  locationRules  LocationRule[]
+  factionRules   FactionRule[]
+  speciesRules   SpeciesRule[]
+  storyItemRules StoryItemRule[]
+  abilityRules   AbilityRule[]
 
   @@index([projectId, ruleType])
   @@index([projectId, category])
@@ -874,6 +889,161 @@ model SpeciesRule {
   worldRule WorldRule @relation(fields: [worldRuleId], references: [id], onDelete: Cascade)
 
   @@index([projectId, speciesId, orderIndex])
+  @@index([projectId, worldRuleId])
+  @@index([projectId, relationType])
+}
+
+model StoryItem {
+  id              String      @id @default(cuid())
+  projectId       String
+  parentId        String?
+  name            String
+  aliases         String[]    @default([])
+  itemType        String?
+  narrativeRole   String?
+  summary         String?
+  description     String?
+  origin          String?
+  appearance      String?
+  function        String?
+  effect          String?
+  cost            String?
+  limitation      String?
+  owner           String?
+  location        String?
+  lifecycleStatus String?
+  visibility      String?
+  importance      Int         @default(0)
+  canonStatus     CanonStatus @default(draft)
+  orderIndex      Int         @default(0)
+  sourceType      String?
+  sourceId        String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent   StoryItem?       @relation("StoryItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children StoryItem[]      @relation("StoryItemHierarchy")
+  states   StoryItemState[]
+  rules    StoryItemRule[]
+
+  @@index([projectId, name])
+  @@index([projectId, parentId, orderIndex])
+  @@index([projectId, itemType])
+  @@index([projectId, lifecycleStatus])
+  @@index([projectId, canonStatus])
+  @@index([projectId, importance])
+  @@index([deletedAt])
+}
+
+model StoryItemState {
+  id              String   @id @default(cuid())
+  projectId       String
+  storyItemId     String
+  chapterId       String?
+  stage           String?
+  orderIndex      Int      @default(0)
+  owner           String?
+  location        String?
+  lifecycleStatus String?
+  visibility      String?
+  condition       String?
+  powerState      String?
+  eventSummary    String?
+  stateNote       String?
+  sourceType      String?
+  sourceId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  storyItem StoryItem @relation(fields: [storyItemId], references: [id], onDelete: Cascade)
+  chapter   Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, storyItemId, createdAt])
+  @@index([projectId, storyItemId, orderIndex])
+  @@index([projectId, chapterId])
+  @@index([chapterId])
+}
+
+model StoryItemRule {
+  id               String   @id @default(cuid())
+  projectId        String
+  storyItemId      String
+  worldRuleId      String
+  relationType     String?
+  isPrimary        Boolean  @default(false)
+  enforcementLevel String?
+  notes            String?
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  storyItem StoryItem @relation(fields: [storyItemId], references: [id], onDelete: Cascade)
+  worldRule WorldRule @relation(fields: [worldRuleId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, storyItemId, orderIndex])
+  @@index([projectId, worldRuleId])
+  @@index([projectId, relationType])
+}
+
+model Ability {
+  id             String      @id @default(cuid())
+  projectId      String
+  name           String
+  aliases        String[]    @default([])
+  abilityType    String?
+  narrativeRole  String?
+  summary        String?
+  description    String?
+  effect         String?
+  cost           String?
+  limitation     String?
+  condition      String?
+  source         String?
+  progression    String?
+  masteryNotes   String?
+  countermeasure String?
+  visibility     String?
+  importance     Int         @default(0)
+  canonStatus    CanonStatus @default(draft)
+  orderIndex     Int         @default(0)
+  sourceType     String?
+  sourceId       String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  rules   AbilityRule[]
+
+  @@index([projectId, name])
+  @@index([projectId, abilityType])
+  @@index([projectId, canonStatus])
+  @@index([projectId, importance])
+  @@index([deletedAt])
+}
+
+model AbilityRule {
+  id               String   @id @default(cuid())
+  projectId        String
+  abilityId        String
+  worldRuleId      String
+  relationType     String?
+  isPrimary        Boolean  @default(false)
+  enforcementLevel String?
+  notes            String?
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ability   Ability   @relation(fields: [abilityId], references: [id], onDelete: Cascade)
+  worldRule WorldRule @relation(fields: [worldRuleId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, abilityId, orderIndex])
   @@index([projectId, worldRuleId])
   @@index([projectId, relationType])
 }

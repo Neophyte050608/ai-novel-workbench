@@ -13,7 +13,7 @@
 - `WorldRule`：世界规则、力量规则、限制、法则、禁忌、社会运行规则等。
 - `WorldItem`：收窄为通用世界设定。
 
-本文件记录阶段性边界，作为后续逐实体细化 schema、API、UI、Context Builder 读取策略的依据；当前不表示这些实体已经实现。
+本文件记录 WorldItem 收窄后的职责边界、schema/API/UI 落地范围，以及后续 Context Builder 读取策略的依据。当前 `Location` / `Faction` / `Species` / `StoryItem` / `WorldRule` 已作为一等实体推进，`WorldItem` 只作为通用世界设定入口继续维护。
 
 ## 职责
 
@@ -100,9 +100,39 @@
 3. 角色与物种、地点、势力、道具之间的连接不写死在 `Character` 字段上，通过 `Relationship` 表达。
 4. 示例：`Character(小白)` 通过 `Relationship(belongs_to_species)` 指向 `Species(九尾灵狐)`。
 
+## 已落地范围
+
+### Schema / Migration
+
+- `WorldItemType` 保留历史 enum 值，不删除 `location`、`organization`、`rule`、`magic_system`、`technology`、`item`、`character_note`、`timeline_event`、`species` 等旧类型。
+- `WorldItemType` 已补充通用设定值：`system`、`culture`、`concept`、`social_system`；`history` 和 `custom` 沿用既有值。
+- `WorldItem` 已补充 `visibility`、`sourceType`、`sourceId`，用于与其他实体共享基础档案字段。
+- 迁移策略只扩展 schema，不自动迁移历史数据；旧 `WorldItem(type=location/organization/species/item/rule/...)` 可继续读取和编辑其他字段，但不能通过新建入口继续新增为这些类型。
+
+### 后端 API
+
+`WorldItemsModule` 提供项目内通用设定基础 API：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/projects/:projectId/world-items` | 列出项目内未软删除 WorldItem，按重要度和更新时间排序。 |
+| `POST` | `/projects/:projectId/world-items` | 新建通用设定。`type` 仅允许 `system` / `history` / `culture` / `concept` / `social_system` / `custom`，缺省为 `custom`。 |
+| `GET` | `/projects/:projectId/world-items/:worldItemId` | 读取单条通用设定或历史 WorldItem。 |
+| `PATCH` | `/projects/:projectId/world-items/:worldItemId` | 编辑通用设定。若更新 `type`，同样只允许通用设定白名单。 |
+| `DELETE` | `/projects/:projectId/world-items/:worldItemId` | 软删除。 |
+| `POST` | `/projects/:projectId/world-items/:worldItemId/confirm` | 标记为 `confirmed`。 |
+| `POST` | `/projects/:projectId/world-items/:worldItemId/archive` | 标记为 `archived`。 |
+
+### 前端工作台
+
+- 工作台左侧导航提供“通用设定”模块，接入真实 `WorldItem` API。
+- 新建表单的类型下拉只展示 `system`、`history`、`culture`、`concept`、`social_system`、`custom`。
+- 列表和详情仍能展示历史类型数据，避免旧数据因本次收窄不可见。
+- 通用设定可作为 Relationship 的 `world_item` 目标，与人物、地点、势力、物种、道具、能力和世界规则建立解释、背景、归属或影响关系。
+
 ## 开发规则
 
-1. 本次文档结论不等于 schema/API/UI 已实现。
+1. 本模块已完成基础 schema/API/UI 收窄；后续新增字段或迁移历史数据仍必须先更新模块文档和任务拆分。
 2. 新增或修改世界观实体 schema 前，必须先补对应模块文档和任务拆分。
 3. 一等实体拆分应分阶段推进，避免一次性扩大实现范围。
 4. 迁移历史 WorldItem 数据时必须通过 Prisma migration，并编写 migration 文档。
