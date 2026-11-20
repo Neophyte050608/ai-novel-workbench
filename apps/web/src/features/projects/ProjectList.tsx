@@ -17,6 +17,11 @@ import {
 import { IllustrationNoContent, IllustrationNoContentDark } from '@douyinfe/semi-illustrations';
 import { IconArrowLeft, IconDelete, IconEdit, IconFile, IconPlus, IconSearch } from '@douyinfe/semi-icons';
 import { t } from '../../shared/i18n';
+import { StatusTag, statusLabel, statusOptions, statusColor } from '../../shared/ui/StatusTag';
+import { listChapters } from '../chapters/api';
+import type { Chapter } from '../chapters/types';
+import { ChapterWorkspace } from '../chapters/ChapterWorkspace';
+import { SceneWorkspace } from '../scenes/SceneWorkspace';
 import {
   createAbility,
   createAbilityRule,
@@ -176,12 +181,16 @@ import type {
 
 const { Title, Text, Paragraph } = Typography;
 type ViewMode = 'shelf' | 'manual-create' | 'workspace';
-type WorkspaceSection = 'info' | 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'assets';
+type WorkspaceSection = 'info' | 'chapters' | 'scenes' | 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'assets';
 type FormApi = Parameters<NonNullable<React.ComponentProps<typeof Form>['getFormApi']>>[0];
 type ModuleKind = 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'storyItems' | 'abilities';
 type RelationshipTargetType = Exclude<RelationshipEntityType, 'chapter' | 'chapter_plan'>;
 type RelationshipTargetOption = { type: RelationshipTargetType; id: string; label: string; summary?: string };
-type DetailField = { key: string; label: string; long?: boolean; options?: Array<{ label: string; value: string }> };
+type SelectOption = { label: string; value: string };
+type DetailTab = 'overview' | 'relations';
+type RelationshipDirectionInput = 'from_current' | 'to_current' | 'bidirectional';
+type StatusFilterOption = { label: string; value: string; rawValue?: string };
+type DetailField = { key: string; label: string; long?: boolean; options?: SelectOption[] };
 type DetailGroup = { title: string; fields: DetailField[] };
 type ModuleConfig = {
   kind: ModuleKind;
@@ -198,26 +207,28 @@ type SubResourceKind = 'characterStates' | 'characterIdentities' | 'locationStat
 type SubResourceRecord = { id: string; title: string; meta?: string | null; summary?: string | null; updatedAt?: string; fields: Record<string, unknown> };
 type SubResourceConfig = { kind: SubResourceKind; title: string; addLabel: string; parentIdName: string; titleField: string; metaFields: string[]; fields: DetailField[]; requiredFields?: string[]; booleanFields?: string[]; numberFields?: string[]; longFields?: string[]; defaults?: Record<string, unknown> };
 
-const workspaceSections: WorkspaceSection[] = ['info', 'characters', 'locations', 'factions', 'species', 'rules', 'worldItems', 'assets'];
+const workspaceSections: WorkspaceSection[] = ['info', 'chapters', 'scenes', 'characters', 'locations', 'factions', 'species', 'rules', 'worldItems', 'assets'];
 const localEntityIdPrefixes = ['local-', 'sample-', 'placeholder-', 'example-'] as const;
 const worldItemTypeOptions = [
-  { value: 'system', label: 'system' },
-  { value: 'history', label: 'history' },
-  { value: 'culture', label: 'culture' },
-  { value: 'concept', label: 'concept' },
-  { value: 'social_system', label: 'social_system' },
-  { value: 'custom', label: 'custom' },
+  { value: 'system', label: '体系' },
+  { value: 'history', label: '历史' },
+  { value: 'culture', label: '文化' },
+  { value: 'concept', label: '概念' },
+  { value: 'social_system', label: '社会制度' },
+  { value: 'custom', label: '自定义' },
 ];
 const allowedWorldItemTypes = new Set(worldItemTypeOptions.map((option) => option.value));
 
+const projectStatusOptions = statusOptions(['planning', 'active', 'paused', 'completed', 'archived'] as const);
 const projectLongFields = new Set(['logline', 'summary', 'premise', 'coreIdea', 'mainPlot', 'intro', 'storySeed', 'worldview', 'eraBackground', 'writingStyle']);
+const projectNullableFields = new Set(['subtitle', 'logline', 'summary', 'premise', 'coreIdea', 'mainPlot', 'intro', 'storySeed', 'worldview', 'eraBackground', 'targetLength', 'estimatedChapters', 'wordsPerChapter', 'writingStyle', 'tone', 'pov', 'protagonist']);
 const projectInfoGroups: DetailGroup[] = [
   {
     title: t('projects.detail.basicInfo'),
     fields: [
       { key: 'title', label: t('projects.creation.titleLabel') },
       { key: 'subtitle', label: t('projects.workspace.info.subtitle') },
-      { key: 'status', label: t('projects.workspace.info.status') },
+      { key: 'status', label: t('projects.workspace.info.status'), options: projectStatusOptions },
       { key: 'logline', label: t('projects.workspace.info.logline'), long: true },
       { key: 'summary', label: t('projects.workspace.info.summary'), long: true },
     ],
@@ -394,20 +405,114 @@ const relationshipTargetTypes: Array<{ value: RelationshipTargetType; label: str
   { value: 'world_item', label: '通用设定' },
 ];
 
-const relationshipTypeOptions = ['ally', 'rival', 'enemy', 'mentor', 'student', 'family', 'born_in', 'lives_in', 'visited', 'protects_place', 'owns', 'seeks', 'uses', 'learns', 'teaches', 'contains', 'amplifies', 'influenced_by', 'appears_in', 'related_to'];
+type DedicatedRelationshipRoute = {
+  sourceType: RelationshipTargetType;
+  targetType: RelationshipTargetType;
+  message: string;
+};
+
+const dedicatedRelationshipRoutes: DedicatedRelationshipRoute[] = [
+  { sourceType: 'character', targetType: 'faction', message: '这类关系请在对应势力的「势力成员」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'location', targetType: 'world_rule', message: '这类关系请在下方「地点规则」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'location', targetType: 'faction', message: '这类关系请在下方「地点势力」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'faction', targetType: 'character', message: '这类关系请在下方「势力成员」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'faction', targetType: 'faction', message: '这类关系请在下方「势力关系」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'faction', targetType: 'world_rule', message: '这类关系请在下方「势力规则」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'species', targetType: 'world_rule', message: '这类关系请在下方「物种规则」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'story_item', targetType: 'world_rule', message: '这类关系请在下方「道具规则」中维护。通用关系仅用于没有专用面板的补充记录。' },
+  { sourceType: 'ability', targetType: 'world_rule', message: '这类关系请在下方「能力规则」中维护。通用关系仅用于没有专用面板的补充记录。' },
+];
+
+const defaultRelationshipTypeOptions: SelectOption[] = [
+  { value: 'related_to', label: '相关' },
+  { value: 'ally', label: '同盟' },
+  { value: 'rival', label: '竞争者' },
+  { value: 'enemy', label: '敌对' },
+  { value: 'custom', label: '自定义' },
+];
+
+const relationshipTypeOptionsByTargetType: Partial<Record<RelationshipTargetType, SelectOption[]>> = {
+  character: [
+    { value: 'family', label: '亲属' },
+    { value: 'mentor_student', label: '师徒' },
+    { value: 'lover', label: '恋人' },
+    { value: 'friend', label: '朋友' },
+    { value: 'enemy', label: '敌人' },
+    { value: 'ally', label: '同盟' },
+    { value: 'rival', label: '竞争者' },
+    { value: 'savior', label: '救命恩人' },
+    { value: 'secret_identity', label: '秘密身份' },
+    { value: 'custom', label: '自定义' },
+  ],
+  location: [
+    { value: 'born_in', label: '出生于' },
+    { value: 'lives_in', label: '居住于' },
+    { value: 'visited', label: '曾到访' },
+    { value: 'guards', label: '守护' },
+    { value: 'exiled_from', label: '被放逐自' },
+    { value: 'missing_at', label: '失踪于' },
+    { value: 'sealed_at', label: '被封印于' },
+    { value: 'custom', label: '自定义' },
+  ],
+  faction: [
+    { value: 'member', label: '成员' },
+    { value: 'leader', label: '领袖' },
+    { value: 'elder', label: '长老' },
+    { value: 'disciple', label: '弟子' },
+    { value: 'undercover', label: '卧底' },
+    { value: 'traitor', label: '叛徒' },
+    { value: 'wanted_by', label: '被追捕' },
+    { value: 'cooperates_with', label: '合作' },
+    { value: 'alliance', label: '联盟' },
+    { value: 'hostility', label: '敌对' },
+    { value: 'vassal', label: '附庸' },
+    { value: 'custom', label: '自定义' },
+  ],
+  world_rule: [
+    { value: 'applies', label: '适用' },
+    { value: 'exempt', label: '豁免' },
+    { value: 'violates', label: '违反' },
+    { value: 'uses_rule', label: '利用' },
+    { value: 'maintains', label: '维护' },
+    { value: 'opposes', label: '对抗' },
+    { value: 'primary_rule', label: '主要规则' },
+    { value: 'secondary_rule', label: '次要规则' },
+    { value: 'custom', label: '自定义' },
+  ],
+  story_item: [
+    { value: 'owns', label: '拥有' },
+    { value: 'uses', label: '使用' },
+    { value: 'inherits', label: '继承' },
+    { value: 'seeks', label: '寻找' },
+    { value: 'lost', label: '遗失' },
+    { value: 'seals', label: '封印' },
+    { value: 'contends_for', label: '争夺' },
+    { value: 'custom', label: '自定义' },
+  ],
+  ability: [
+    { value: 'uses', label: '使用' },
+    { value: 'learns', label: '学习' },
+    { value: 'teaches', label: '传授' },
+    { value: 'sealed_ability', label: '被封印' },
+    { value: 'countered_by', label: '被克制' },
+    { value: 'custom', label: '自定义' },
+  ],
+};
+
+const relationshipTypeOptions = defaultRelationshipTypeOptions;
 
 const subFieldLabels: Record<string, string> = {
   title: '身份标题', description: '描述', type: '类型', isPublic: '公开', startsAt: '开始', endsAt: '结束', importance: '重要度',
-  chapterId: '章节 ID', stage: '阶段', orderIndex: '排序', location: '位置', physicalState: '身体状态', emotionalState: '情绪状态', goal: '目标', knownSecrets: '已知秘密', relationshipChanges: '关系变化', statusNote: '状态备注',
+  chapterId: '关联章节', stage: '阶段', orderIndex: '排序', location: '位置', physicalState: '身体状态', emotionalState: '情绪状态', goal: '目标', knownSecrets: '已知秘密', relationshipChanges: '关系变化', statusNote: '状态备注',
   lifecycleStatus: '生命周期状态', dangerLevel: '危险等级', accessRule: '进入规则', visibility: '可见性', environmentChanges: '环境变化', controlSummary: '控制情况', eventSummary: '事件摘要', stateNote: '状态备注',
-  worldRuleId: '世界规则 ID', relationType: '关系类型', isPrimary: '主规则', enforcementLevel: '执行强度', notes: '备注',
-  factionId: '势力 ID', influenceLevel: '影响力', isCurrent: '当前有效',
+  worldRuleId: '世界规则', relationType: '关系类型', isPrimary: '主规则', enforcementLevel: '执行强度', notes: '备注',
+  factionId: '势力', influenceLevel: '影响力', isCurrent: '当前有效',
   status: '状态', powerLevel: '权力等级', resourceState: '资源状态', internalState: '内部状态', publicReputation: '公众声誉', conflictSummary: '冲突摘要',
-  characterId: '人物 ID', membershipType: '成员类型', roleTitle: '角色头衔', rank: '等级', department: '部门',
-  targetFactionId: '目标势力 ID', direction: '方向', strength: '强度',
+  characterId: '人物', membershipType: '成员类型', roleTitle: '角色头衔', rank: '等级', department: '部门',
+  targetFactionId: '目标势力', direction: '方向', strength: '强度',
   traitType: '特征类型', name: '名称', summary: '简介', isInheritable: '可遗传', isCommon: '常见',
   aliases: '别名', abilityType: '能力类型', effect: '效果', cost: '代价', limitation: '限制', condition: '条件', inheritanceType: '遗传类型', awakeningCondition: '觉醒条件', masteryNotes: '掌握要点', isUnique: '唯一',
-  owner: '持有者', powerState: '力量状态', sourceType: '来源类型', sourceId: '来源 ID',
+  owner: '持有者', powerState: '力量状态', sourceType: '来源方式', sourceId: '来源备注',
 };
 
 function subFields(keys: string[], longKeys: string[] = []): DetailField[] {
@@ -445,12 +550,48 @@ const subResourceConfigs: Partial<Record<ModuleKind, SubResourceConfig[]>> = {
   ],
 };
 
+const relationSubResourceKinds = new Set<SubResourceKind>([
+  'locationRules',
+  'locationFactions',
+  'factionMemberships',
+  'factionRelations',
+  'factionRules',
+  'speciesRules',
+  'storyItemRules',
+  'abilityRules',
+]);
+
+function isRelationDetailGroup(group: DetailGroup) {
+  return group.title.includes('关系');
+}
+
+function filterDetailGroups(groups: DetailGroup[], predicate: (field: DetailField, group: DetailGroup) => boolean) {
+  return groups
+    .map((group) => ({ ...group, fields: group.fields.filter((field) => predicate(field, group)) }))
+    .filter((group) => group.fields.length > 0);
+}
+
+function overviewDetailGroups(groups: DetailGroup[]) {
+  return filterDetailGroups(groups.filter((group) => !isRelationDetailGroup(group)), (field) => !isRelationField(field.key));
+}
+
+function relationSummaryGroups(groups: DetailGroup[], values: Record<string, unknown>) {
+  return filterDetailGroups(groups, (field) => isRelationField(field.key) && relationItems(values[field.key]).length > 0);
+}
+
+function splitSubResourceConfigs(configs: SubResourceConfig[]) {
+  return {
+    overview: configs.filter((config) => !relationSubResourceKinds.has(config.kind)),
+    relations: configs.filter((config) => relationSubResourceKinds.has(config.kind)),
+  };
+}
+
 function fields(keys: string[], long = false): DetailField[] {
   return keys.map((key) => ({ key, label: t(`modules.fields.${key}` as Parameters<typeof t>[0]), long }));
 }
 
 function record(id: string, name: string, summary: string, type: string, status: string, importance: number, values: Record<string, string | number | null | undefined>): EntityRecord {
-  return { id, name, summary, type, status, importance, updatedAt: new Date().toISOString(), fields: { name, title: name, summary, importance, ...values } };
+  return { id, name, summary, type: displayOptionLabel(worldItemTypeOptions, type), status: statusLabel(status, ''), importance, updatedAt: new Date().toISOString(), fields: { name, title: name, summary, importance, ...values } };
 }
 
 function formatDate(value: string) {
@@ -476,7 +617,18 @@ function normalizeInput(values: CreateProjectInput & { idea?: string }): CreateP
 
 function compactText(value: unknown) {
   if (value === null || value === undefined || value === '') return t('common.notFilled');
-  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+  if (typeof value === 'object') return readableStructuredText(value);
+  return statusLabel(String(value), String(value));
+}
+
+function readableStructuredText(value: unknown): string {
+  if (Array.isArray(value)) return value.map(compactText).filter(Boolean).join('、') || t('common.notFilled');
+  if (isRecordValue(value)) {
+    return Object.entries(value)
+      .filter(([, entryValue]) => !isEmptyDisplayValue(entryValue))
+      .map(([key, entryValue]) => `${subFieldLabels[key] ?? key}：${compactText(entryValue)}`)
+      .join('\n') || t('common.notFilled');
+  }
   return String(value);
 }
 
@@ -486,6 +638,17 @@ function isEmptyDisplayValue(value: unknown) {
 
 function displayText(value: unknown) {
   return isEmptyDisplayValue(value) ? t('common.notFilled') : compactText(value);
+}
+
+function displayOptionLabel(options: SelectOption[] | undefined, value: unknown) {
+  if (value === undefined || value === null || value === '') return '';
+  return options?.find((option) => option.value === value)?.label ?? String(value);
+}
+
+function displayFieldValue(field: DetailField, value: unknown) {
+  if (field.options && !isEmptyDisplayValue(value)) return displayOptionLabel(field.options, value);
+  if (isStatusField(field.key)) return statusLabel(value as string | null | undefined, '');
+  return displayText(value);
 }
 
 function relationItems(value: unknown) {
@@ -516,7 +679,7 @@ function characterToRecord(character: Character): EntityRecord {
     name: character.name,
     summary: character.background || character.personality || character.role,
     type: character.kind,
-    status: character.lifeStatus || character.canonStatus,
+    status: statusLabel(character.lifeStatus || character.canonStatus, ''),
     importance: character.importance,
     updatedAt: character.updatedAt,
     fields: {
@@ -544,7 +707,7 @@ function locationToRecord(location: Location, profile?: LocationProfile): Entity
     name: location.name,
     summary: location.summary || location.description || location.narrativeRole,
     type: location.locationType,
-    status: location.lifecycleStatus || location.canonStatus,
+    status: statusLabel(location.lifecycleStatus || location.canonStatus, ''),
     importance: location.importance,
     updatedAt: location.updatedAt,
     fields: {
@@ -578,7 +741,7 @@ function factionToRecord(faction: Faction, profile?: FactionProfile): EntityReco
     name: faction.name,
     summary: faction.summary || faction.description || faction.goal,
     type: faction.factionType,
-    status: String(latestState?.status ?? faction.status ?? faction.canonStatus),
+    status: statusLabel(String(latestState?.status ?? faction.status ?? faction.canonStatus), ''),
     importance: faction.importance,
     updatedAt: faction.updatedAt,
     fields: {
@@ -609,7 +772,7 @@ function speciesToRecord(species: Species, profile?: SpeciesProfile): EntityReco
     name: species.name,
     summary: species.summary || species.description || species.narrativeRole,
     type: species.speciesType,
-    status: species.status || species.rarity || species.canonStatus,
+    status: statusLabel(species.status || species.rarity || species.canonStatus, ''),
     importance: species.importance,
     updatedAt: species.updatedAt,
     fields: {
@@ -645,7 +808,7 @@ function storyItemToRecord(storyItem: StoryItem, profile?: StoryItemProfile): En
     name: storyItem.name,
     summary: storyItem.summary || storyItem.description || storyItem.narrativeRole,
     type: storyItem.itemType,
-    status: String(latestState?.lifecycleStatus ?? storyItem.lifecycleStatus ?? storyItem.canonStatus),
+    status: statusLabel(String(latestState?.lifecycleStatus ?? storyItem.lifecycleStatus ?? storyItem.canonStatus), ''),
     importance: storyItem.importance,
     updatedAt: storyItem.updatedAt,
     fields: {
@@ -677,7 +840,7 @@ function abilityToRecord(ability: Ability, profile?: AbilityProfile): EntityReco
     name: ability.name,
     summary: ability.summary || ability.description || ability.effect,
     type: ability.abilityType,
-    status: ability.visibility || ability.canonStatus,
+    status: statusLabel(ability.visibility || ability.canonStatus, ''),
     importance: ability.importance,
     updatedAt: ability.updatedAt,
     fields: {
@@ -709,7 +872,7 @@ function worldRuleToRecord(rule: WorldRule, profile?: WorldRuleProfile): EntityR
     name: profileRule.title,
     summary: profileRule.summary || profileRule.content || profileRule.ruleType,
     type: profileRule.ruleType,
-    status: profileRule.status || profileRule.canonStatus,
+    status: statusLabel(profileRule.status || profileRule.canonStatus, ''),
     importance: profileRule.importance,
     updatedAt: profileRule.updatedAt,
     fields: {
@@ -740,8 +903,8 @@ function worldItemToRecord(worldItem: WorldItem): EntityRecord {
     id: worldItem.id,
     name: worldItem.name,
     summary: worldItem.summary || worldItem.content || worldItem.type,
-    type: worldItem.type,
-    status: worldItem.visibility || worldItem.canonStatus,
+    type: displayOptionLabel(worldItemTypeOptions, worldItem.type),
+    status: statusLabel(worldItem.visibility || worldItem.canonStatus, ''),
     importance: worldItem.importance,
     updatedAt: worldItem.updatedAt,
     fields: {
@@ -967,13 +1130,25 @@ function numberInput(value: unknown) {
 }
 
 function asOptionalString(value: unknown) {
+  if (value === null) return null as unknown as string | undefined;
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
-function parseSubResourceInput(values: Record<string, unknown>, config: SubResourceConfig) {
+function nullifyEmptyFields(values: Record<string, unknown>, fields: DetailField[]) {
+  const next = { ...values };
+  for (const field of fields) {
+    if (next[field.key] === '' || next[field.key] === undefined) next[field.key] = null;
+  }
+  return next;
+}
+
+function parseSubResourceInput(values: Record<string, unknown>, config: SubResourceConfig, isNew: boolean) {
   return config.fields.reduce<Record<string, unknown>>((acc, field) => {
     const value = values[field.key];
-    if (value === '' || value === undefined || value === null) return acc;
+    if (value === '' || value === undefined || value === null) {
+      if (!isNew && !config.requiredFields?.includes(field.key)) acc[field.key] = null;
+      return acc;
+    }
     if (config.numberFields?.includes(field.key)) acc[field.key] = numberInput(value);
     else if (config.booleanFields?.includes(field.key)) acc[field.key] = Boolean(value);
     else acc[field.key] = value;
@@ -1012,8 +1187,8 @@ async function listSubResources(projectId: string, parentId: string, config: Sub
 }
 
 async function saveSubResource(projectId: string, parentId: string, config: SubResourceConfig, selected: SubResourceRecord | undefined, values: Record<string, unknown>): Promise<SubResourceRecord> {
-  const input = parseSubResourceInput(values, config);
   const isNew = !selected || !isPersistedEntityId(selected.id);
+  const input = parseSubResourceInput(values, config, isNew);
   let saved: unknown;
   switch (config.kind) {
     case 'characterStates': saved = isNew ? await createCharacterState(projectId, parentId, input as CharacterStateInput) : await updateCharacterState(projectId, parentId, selected.id, input as CharacterStateInput); break;
@@ -1240,7 +1415,7 @@ function Workspace({ project, activeSection, onSectionChange, onBack, onProjectU
           </Space>
         </aside>
         <main style={{ padding: 24 }}>
-          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
+          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'chapters' ? <ChapterWorkspace projectId={project.id} /> : activeSection === 'scenes' ? <SceneWorkspace projectId={project.id} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
         </main>
       </div>
     </Card>
@@ -1270,7 +1445,12 @@ function ProjectInfoPanel({ project, onSave, onDelete }: { project: Project; onS
     if (!formApi) return;
     const values = await formApi.validate() as Record<string, unknown>;
     const input = projectInfoGroups.flatMap((group) => group.fields).reduce<Record<string, unknown>>((acc, field) => {
-      acc[field.key] = values[field.key] === '' ? undefined : values[field.key];
+      const value = values[field.key];
+      if (value === '' || value === undefined || value === null) {
+        if (projectNullableFields.has(field.key)) acc[field.key] = null;
+        return acc;
+      }
+      acc[field.key] = value;
       return acc;
     }, {});
     setSaving(true);
@@ -1348,37 +1528,38 @@ async function loadEntityProfileRecord(projectId: string, kind: ModuleKind, enti
 
 async function saveEntityRecord(projectId: string, kind: ModuleKind, selected: EntityRecord, values: Record<string, unknown>) {
   const isNew = !isPersistedEntityId(selected.id);
+  const normalizedValues = isNew ? values : nullifyEmptyFields(values, moduleConfigs[kind].groups.flatMap((group) => group.fields));
   switch (kind) {
     case 'characters': {
-      const input = recordToCharacterInput(values);
+      const input = recordToCharacterInput(normalizedValues);
       return characterToRecord(isNew ? await createCharacter(projectId, input) : await updateCharacter(projectId, selected.id, input));
     }
     case 'locations': {
-      const input = recordToLocationInput(values);
+      const input = recordToLocationInput(normalizedValues);
       return locationToRecord(isNew ? await createLocation(projectId, input) : await updateLocation(projectId, selected.id, input));
     }
     case 'factions': {
-      const input = recordToFactionInput(values);
+      const input = recordToFactionInput(normalizedValues);
       return factionToRecord(isNew ? await createFaction(projectId, input) : await updateFaction(projectId, selected.id, input));
     }
     case 'species': {
-      const input = recordToSpeciesInput(values);
+      const input = recordToSpeciesInput(normalizedValues);
       return speciesToRecord(isNew ? await createSpecies(projectId, input) : await updateSpecies(projectId, selected.id, input));
     }
     case 'storyItems': {
-      const input = recordToStoryItemInput(values);
+      const input = recordToStoryItemInput(normalizedValues);
       return storyItemToRecord(isNew ? await createStoryItem(projectId, input) : await updateStoryItem(projectId, selected.id, input));
     }
     case 'abilities': {
-      const input = recordToAbilityInput(values);
+      const input = recordToAbilityInput(normalizedValues);
       return abilityToRecord(isNew ? await createAbility(projectId, input) : await updateAbility(projectId, selected.id, input));
     }
     case 'rules': {
-      const input = recordToWorldRuleInput(values);
+      const input = recordToWorldRuleInput(normalizedValues);
       return worldRuleToRecord(isNew ? await createWorldRule(projectId, input) : await updateWorldRule(projectId, selected.id, input));
     }
     case 'worldItems': {
-      const input = recordToWorldItemInput(values, selected.fields.type);
+      const input = recordToWorldItemInput(normalizedValues, selected.fields.type);
       return worldItemToRecord(isNew ? await createWorldItem(projectId, input) : await updateWorldItem(projectId, selected.id, input));
     }
   }
@@ -1429,6 +1610,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
   const [saving, setSaving] = useState(false);
   const [formApi, setFormApi] = useState<FormApi>();
   const [loadError, setLoadError] = useState<string>();
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
 
   const loadRecords = useCallback(async (preferredId?: string) => {
     setLoading(true);
@@ -1493,18 +1675,23 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
 
   const selected = selectedId ? records.find((recordItem) => recordItem.id === selectedId) : undefined;
   const typeOptions = [...new Set(records.map((recordItem) => recordItem.type).filter(Boolean))] as string[];
-  const statusOptions = [...new Set(records.map((recordItem) => recordItem.status).filter(Boolean))] as string[];
+  const statusOptions = uniqueStatusFilterOptions(records.map((recordItem) => recordItem.fields.status ?? recordItem.status));
   const visibleRecords = records.filter((recordItem) => {
-    const text = [recordItem.name, recordItem.summary, recordItem.type, recordItem.status, ...Object.values(recordItem.fields)].join(' ').toLowerCase();
+    const rawStatus = String(recordItem.fields.status ?? recordItem.status ?? '');
+    const text = [recordItem.name, recordItem.summary, recordItem.type, recordItem.status, statusLabel(rawStatus, ''), ...Object.values(recordItem.fields).map((value) => compactText(value))].join(' ').toLowerCase();
     const matchQuery = !query.trim() || text.includes(query.trim().toLowerCase());
     const matchType = !filter.type || recordItem.type === filter.type;
-    const matchStatus = !filter.status || recordItem.status === filter.status;
+    const matchStatus = !filter.status || rawStatus === filter.status;
     const matchImportance = !filter.importance || (filter.importance === 'high' ? (recordItem.importance ?? 0) >= 7 : (recordItem.importance ?? 0) < 7);
     return matchQuery && matchType && matchStatus && matchImportance;
   });
   const hasActiveSearch = Boolean(query.trim()) || !isEmptyFilter(filter);
   const emptyTitle = hasActiveSearch ? t('modules.emptyAfterFilter') : t('modules.emptyModuleTitle');
   const emptyDescription = hasActiveSearch ? t('modules.emptyFilterDescription') : t('modules.emptyModuleDescription');
+  const overviewGroups = overviewDetailGroups(config.groups);
+  const editGroups = overviewGroups;
+  const selectedRelationSummaryGroups = selected ? relationSummaryGroups(config.groups, selected.fields) : [];
+  const { overview: overviewSubResources, relations: relationSubResources } = splitSubResourceConfigs(subResourceConfigs[config.kind] ?? []);
   const listEmpty = <Empty title={emptyTitle} description={emptyDescription} image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} />;
   const detailEmpty = <Empty title={t('common.detailPlaceholder')} description={t('modules.noSelectionDescription')} image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} />;
   const errorEmpty = loadError ? <Empty title={t('modules.loadErrorTitle', { module: config.title })} description={t('modules.loadErrorDescription')} image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} /> : undefined;
@@ -1518,6 +1705,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
     const fresh = draftRecord(config);
     setRecords((current) => [fresh, ...current.filter((item) => isPersistedEntityId(item.id))]);
     setSelectedId(fresh.id);
+    setDetailTab('overview');
     setEditing(true);
   }
 
@@ -1533,6 +1721,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
   function handleSelectRecord(recordId: string) {
     setRecords((current) => current.filter((item) => isPersistedEntityId(item.id) || item.id === recordId));
     setSelectedId(recordId);
+    setDetailTab('overview');
     setEditing(false);
   }
 
@@ -1544,6 +1733,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
       const saved = await saveEntityRecord(projectId, config.kind, selected, values);
       setRecords((current) => mergeSavedRecord(current, saved));
       setSelectedId(saved.id);
+      setDetailTab('overview');
       loadRecords(saved.id).catch((error) => Notification.error({ title: t('messages.loadFailed'), content: String((error as Error).message ?? error) }));
       Notification.success({ title: t('messages.saveSuccess') });
       setEditing(false);
@@ -1574,23 +1764,49 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
       <Space wrap spacing={8} style={{ width: '100%', rowGap: 8 }}>
         <Input prefix={<IconSearch />} placeholder={t('modules.searchPlaceholder')} value={query} onChange={setQuery} style={{ width: 260 }} />
         <Select placeholder={t('modules.typeFilter')} value={filter.type} onChange={(value) => setFilter((current) => ({ ...current, type: value as string }))} showClear style={{ width: 160 }}>{typeOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select>
-        <Select placeholder={t('modules.statusFilter')} value={filter.status} onChange={(value) => setFilter((current) => ({ ...current, status: value as string }))} showClear style={{ width: 140 }}>{statusOptions.map((option) => <Select.Option key={option} value={option}>{option}</Select.Option>)}</Select>
+        <Select placeholder={t('modules.statusFilter')} value={filter.status} onChange={(value) => setFilter((current) => ({ ...current, status: value as string }))} showClear style={{ width: 140 }}>{statusOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Select>
         <Select placeholder={t('modules.importanceFilter')} value={filter.importance} onChange={(value) => setFilter((current) => ({ ...current, importance: value as string }))} showClear style={{ width: 140 }}><Select.Option value="high">7+</Select.Option><Select.Option value="normal">0-6</Select.Option></Select>
         {filter.type ? <Tag closable onClose={() => setFilter((current) => ({ ...current, type: undefined }))}>{t('modules.typeFilter')}: {filter.type}</Tag> : null}
-        {filter.status ? <Tag closable onClose={() => setFilter((current) => ({ ...current, status: undefined }))}>{t('modules.statusFilter')}: {filter.status}</Tag> : null}
+        {filter.status ? <Tag closable onClose={() => setFilter((current) => ({ ...current, status: undefined }))}>{t('modules.statusFilter')}: {statusLabel(filter.status, filter.status)}</Tag> : null}
         {filter.importance ? <Tag closable onClose={() => setFilter((current) => ({ ...current, importance: undefined }))}>{t('modules.importanceFilter')}: {filter.importance}</Tag> : null}
         {(!isEmptyFilter(filter) || query) ? <Button theme="borderless" onClick={clearFilter}>{t('actions.clear')}</Button> : null}
       </Space>
     </Card>
     <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0, 1fr)', gap: 16 }}>
       <Card style={{ borderRadius: 12, minHeight: 520 }} bodyStyle={{ padding: 12 }}>
-        {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading /> : errorEmpty ?? (visibleRecords.length === 0 ? listEmpty : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{visibleRecords.map((recordItem) => <button key={recordItem.id} type="button" onClick={() => handleSelectRecord(recordItem.id)} style={{ textAlign: 'left', padding: 12, borderRadius: 10, border: `1px solid ${recordItem.id === selected?.id ? 'var(--semi-color-primary-light-active)' : 'var(--semi-color-border)'}`, background: recordItem.id === selected?.id ? 'var(--semi-color-primary-light-default)' : 'var(--semi-color-bg-0)', cursor: 'pointer' }}><Text strong ellipsis={{ showTooltip: true }} style={{ display: 'block' }}>{recordItem.name}</Text><Text type="tertiary" size="small" ellipsis={{ showTooltip: true }} style={{ display: 'block', marginTop: 4 }}>{recordItem.summary || recordItem.type || config.metaFallback}</Text><Space spacing={4} style={{ marginTop: 8 }}>{recordItem.type ? <Tag size="small">{recordItem.type}</Tag> : null}{recordItem.status ? <Tag size="small" color="blue">{recordItem.status}</Tag> : null}</Space></button>)}</div>)}
+        {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading /> : errorEmpty ?? (visibleRecords.length === 0 ? listEmpty : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{visibleRecords.map((recordItem) => <button key={recordItem.id} type="button" onClick={() => handleSelectRecord(recordItem.id)} style={{ textAlign: 'left', padding: 12, borderRadius: 10, border: `1px solid ${recordItem.id === selected?.id ? 'var(--semi-color-primary-light-active)' : 'var(--semi-color-border)'}`, background: recordItem.id === selected?.id ? 'var(--semi-color-primary-light-default)' : 'var(--semi-color-bg-0)', cursor: 'pointer' }}><Text strong ellipsis={{ showTooltip: true }} style={{ display: 'block' }}>{recordItem.name}</Text><Text type="tertiary" size="small" ellipsis={{ showTooltip: true }} style={{ display: 'block', marginTop: 4 }}>{recordItem.summary || recordItem.type || config.metaFallback}</Text><Space spacing={4} style={{ marginTop: 8 }}>{recordItem.type ? <Tag size="small">{recordItem.type}</Tag> : null}{recordItem.status ? <StatusTag status={recordItem.status} /> : null}</Space></button>)}</div>)}
       </Card>
       <Card style={{ borderRadius: 12, minHeight: 520 }} bodyStyle={{ padding: 20 }}>
-        {!selected ? detailEmpty : <><div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}><div><Title heading={4} style={{ margin: 0 }}>{selected.name}</Title><Text type="tertiary">{selected.updatedAt ? formatDate(selected.updatedAt) : config.metaFallback}</Text></div>{editing ? <Space><Button onClick={handleCancelEdit}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></Space> : <Space><Button icon={<IconEdit />} onClick={() => setEditing(true)}>{t('actions.edit')}</Button><Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={handleDelete}><Button icon={<IconDelete />} type="danger" theme="borderless">{t('actions.delete')}</Button></Popconfirm></Space>}</div>{editing ? <Form key={selected.id} initValues={selected.fields} getFormApi={setFormApi} labelPosition="top"><GroupedForm groups={config.groups} nameLabel={config.nameLabel} namePlaceholder={config.namePlaceholder} /></Form> : <><GroupedDetails groups={config.groups} values={selected.fields} /><SubResourceSections projectId={projectId} parentId={selected.id} configs={subResourceConfigs[config.kind] ?? []} /><RelationshipsSection projectId={projectId} entityType={moduleEntityType[config.kind]} entityId={selected.id} entityName={selected.name} /></>}</>}
+        {!selected ? detailEmpty : <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
+            <div>
+              <Title heading={4} style={{ margin: 0 }}>{selected.name}</Title>
+              <Text type="tertiary">{selected.updatedAt ? formatDate(selected.updatedAt) : config.metaFallback}</Text>
+            </div>
+            {editing ? <Space><Button onClick={handleCancelEdit}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></Space> : <Space><Button icon={<IconEdit />} onClick={() => setEditing(true)}>{t('actions.edit')}</Button><Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={handleDelete}><Button icon={<IconDelete />} type="danger" theme="borderless">{t('actions.delete')}</Button></Popconfirm></Space>}
+          </div>
+          {editing ? <Form key={selected.id} initValues={selected.fields} getFormApi={setFormApi} labelPosition="top"><GroupedForm groups={editGroups} nameLabel={config.nameLabel} namePlaceholder={config.namePlaceholder} /></Form> : <>
+            <Space spacing={8} style={{ marginBottom: 16 }}>
+              <Button size="small" theme={detailTab === 'overview' ? 'solid' : 'light'} type={detailTab === 'overview' ? 'primary' : 'tertiary'} onClick={() => setDetailTab('overview')}>概览</Button>
+              <Button size="small" theme={detailTab === 'relations' ? 'solid' : 'light'} type={detailTab === 'relations' ? 'primary' : 'tertiary'} onClick={() => setDetailTab('relations')}>关系</Button>
+            </Space>
+            {detailTab === 'overview' ? <><GroupedDetails groups={overviewGroups} values={selected.fields} /><SubResourceSections projectId={projectId} parentId={selected.id} configs={overviewSubResources} /></> : <><EntityRelationsPanel projectId={projectId} entityType={moduleEntityType[config.kind]} entityId={selected.id} entityName={selected.name} /><ReadonlyRelationSummary groups={selectedRelationSummaryGroups} values={selected.fields} /><SubResourceSections projectId={projectId} parentId={selected.id} configs={relationSubResources} /></>}
+          </>}
+        </>}
       </Card>
     </div>
   </ModuleShell>;
+}
+
+function uniqueStatusFilterOptions(values: unknown[]): StatusFilterOption[] {
+  const options = new Map<string, StatusFilterOption>();
+  for (const value of values) {
+    if (isEmptyDisplayValue(value)) continue;
+    const rawValue = String(value);
+    const label = statusLabel(rawValue, rawValue);
+    if (!options.has(rawValue)) options.set(rawValue, { value: rawValue, rawValue, label });
+  }
+  return [...options.values()].sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
 }
 
 function SubResourceSections({ projectId, parentId, configs }: { projectId: string; parentId: string; configs: SubResourceConfig[] }) {
@@ -1605,6 +1821,7 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
   const [saving, setSaving] = useState(false);
   const [editingItem, setEditingItem] = useState<SubResourceRecord>();
   const [formApi, setFormApi] = useState<FormApi>();
+  const [lookupOptions, setLookupOptions] = useState<Record<string, SelectOption[]>>({});
 
   const refresh = useCallback(async () => {
     if (!isPersistedEntityId(parentId)) {
@@ -1626,6 +1843,18 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadSubResourceLookupOptions(projectId)
+      .then((options) => {
+        if (!cancelled) setLookupOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setLookupOptions({});
+      });
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   function openCreate() {
     setEditingItem({ id: `local-${Date.now()}`, title: config.title, fields: { ...(config.defaults ?? {}) } });
@@ -1678,7 +1907,7 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
       {items.map((item) => <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'start', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 10, background: 'var(--semi-color-bg-0)' }}>
         <div style={{ minWidth: 0 }}>
           <Space wrap spacing={6} style={{ rowGap: 6 }}>
-            <Text strong>{item.title}</Text>
+            <Text strong>{displayLookupValue(config.titleField, item.title, lookupOptions)}</Text>
             {item.meta ? <Tag size="small">{item.meta}</Tag> : null}
             {item.updatedAt ? <Tag size="small">{formatDate(item.updatedAt)}</Tag> : null}
           </Space>
@@ -1691,33 +1920,67 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
       </div>)}
     </div>}
     <SideSheet title={editingItem?.id.startsWith('local-') ? config.addLabel : `编辑${config.title}`} visible={sheetVisible} onCancel={closeSheet} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={closeSheet}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></div>}>
-      {editingItem ? <Form key={editingItem.id} initValues={editingItem.fields} getFormApi={setFormApi} labelPosition="top"><SubResourceForm config={config} /></Form> : null}
+      {editingItem ? <Form key={editingItem.id} initValues={editingItem.fields} getFormApi={setFormApi} labelPosition="top"><SubResourceForm config={config} lookupOptions={lookupOptions} /></Form> : null}
     </SideSheet>
   </section>;
 }
 
-function SubResourceForm({ config }: { config: SubResourceConfig }) {
+
+async function loadSubResourceLookupOptions(projectId: string): Promise<Record<string, SelectOption[]>> {
+  const [chapters, characters, factions, rules] = await Promise.all([
+    listChapters(projectId).catch(() => [] as Chapter[]),
+    listCharacters(projectId).catch(() => [] as Character[]),
+    listFactions(projectId).catch(() => [] as Faction[]),
+    listWorldRules(projectId).catch(() => [] as WorldRule[]),
+  ]);
+  const chapterOptions = itemsFromResponse<Chapter>(chapters).map((chapter) => ({ value: chapter.id, label: `#${chapter.orderIndex} ${chapter.title}` }));
+  const characterOptions = persistedItemsFromResponse<Character>(characters).map((character) => ({ value: character.id, label: character.name }));
+  const factionOptions = persistedItemsFromResponse<Faction>(factions).map((faction) => ({ value: faction.id, label: faction.name }));
+  const worldRuleOptions = persistedItemsFromResponse<WorldRule>(rules).map((rule) => ({ value: rule.id, label: rule.title }));
+  return {
+    chapterId: chapterOptions,
+    characterId: characterOptions,
+    factionId: factionOptions,
+    targetFactionId: factionOptions,
+    worldRuleId: worldRuleOptions,
+  };
+}
+
+function displayLookupValue(fieldKey: string, value: unknown, lookupOptions: Record<string, SelectOption[]>) {
+  const text = compactText(value);
+  return lookupOptions[fieldKey]?.find((option) => option.value === value)?.label ?? text;
+}
+
+function SubResourceForm({ config, lookupOptions }: { config: SubResourceConfig; lookupOptions: Record<string, SelectOption[]> }) {
   return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
     {config.fields.map((field) => {
       const rules = config.requiredFields?.includes(field.key) ? [{ required: true, message: `请填写${field.label}` }] : undefined;
       if (config.booleanFields?.includes(field.key)) return <Form.Switch key={field.key} field={field.key} label={field.label} />;
       if (config.numberFields?.includes(field.key)) return <Form.InputNumber key={field.key} field={field.key} label={field.label} style={{ width: '100%' }} rules={rules} />;
+      if (lookupOptions[field.key]) return <Form.Select key={field.key} field={field.key} label={field.label} placeholder="请选择" showClear style={{ width: '100%' }} rules={rules}>{lookupOptions[field.key].map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>;
       if (field.long || config.longFields?.includes(field.key)) return <Form.TextArea key={field.key} field={field.key} label={field.label} autosize={{ minRows: 3, maxRows: 8 }} style={{ gridColumn: '1 / -1' }} rules={rules} />;
       return <Form.Input key={field.key} field={field.key} label={field.label} rules={rules} />;
     })}
   </div>;
 }
 
-function RelationshipsSection({ projectId, entityType, entityId, entityName }: { projectId: string; entityType: RelationshipTargetType; entityId: string; entityName: string }) {
+function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: { projectId: string; entityType: RelationshipTargetType; entityId: string; entityName: string }) {
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [targetOptions, setTargetOptions] = useState<RelationshipTargetOption[]>([]);
   const [targetType, setTargetType] = useState<RelationshipTargetType>('character');
   const [targetId, setTargetId] = useState<string>();
   const [relationType, setRelationType] = useState('related_to');
-  const [direction, setDirection] = useState<'directed' | 'bidirectional'>('directed');
+  const [direction, setDirection] = useState<RelationshipDirectionInput>('from_current');
   const [description, setDescription] = useState('');
-  const [importance, setImportance] = useState<number>(0);
-  const [strength, setStrength] = useState<number>(0);
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const [canonStatus, setCanonStatus] = useState('draft');
+  const [strength, setStrength] = useState<number>(50);
+  const [typeFilter, setTypeFilter] = useState<RelationshipTargetType | 'all'>('all');
+  const [canonFilter, setCanonFilter] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
+  const [groupByType, setGroupByType] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -1750,56 +2013,95 @@ function RelationshipsSection({ projectId, entityType, entityId, entityName }: {
         if (cancelled) return;
         setTargetOptions(options);
         const first = options.find((option) => !(option.type === entityType && option.id === entityId));
-        setTargetType(first?.type ?? 'character');
+        const nextType = first?.type ?? 'character';
+        setTargetType(nextType);
         setTargetId(first?.id);
+        setRelationType(relationshipTypeOptionsFor(nextType)[0]?.value ?? 'related_to');
       })
       .catch(() => {
         if (cancelled) return;
         setTargetOptions([]);
         setTargetId(undefined);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [entityId, entityType, projectId]);
 
   useEffect(() => {
     refreshRelationships();
   }, [refreshRelationships]);
 
-  const selectableTargets = targetOptions.filter((option) => option.type === targetType && !(option.type === entityType && option.id === entityId));
   const optionByKey = new Map(targetOptions.map((option) => [`${option.type}:${option.id}`, option]));
+  const targetRelationTypes = relationshipTypeOptionsFor(targetType);
+  const selectableTargets = targetOptions.filter((option) => option.type === targetType && !(option.type === entityType && option.id === entityId));
+  const relationshipRows = relationships.map((relationship) => relationshipDisplayModel(relationship, entityType, entityId, entityName, optionByKey));
+  const filteredRows = relationshipRows.filter((row) => {
+    const matchType = typeFilter === 'all' || row.otherType === typeFilter;
+    const matchCanon = canonFilter === 'all' || row.relationship.canonStatus === canonFilter;
+    const haystack = [row.otherName, row.otherTypeLabel, row.relationTypeLabel, row.directionLabel, row.description, row.timeRange, row.canonLabel].join(' ').toLowerCase();
+    const matchSearch = !searchText.trim() || haystack.includes(searchText.trim().toLowerCase());
+    return matchType && matchCanon && matchSearch;
+  });
+  const groupedRows = groupByType ? groupRowsByType(filteredRows) : [['全部关系', filteredRows] as const];
+  const selectedDedicatedRoute = dedicatedRelationshipRouteFor(entityType, targetType);
+  const dedicatedRouteMessage = selectedDedicatedRoute ? dedicatedRelationshipRouteMessage(selectedDedicatedRoute) : '';
+  const saveRelationshipDisabled = !targetId || Boolean(selectedDedicatedRoute);
+  const currentCount = relationships.filter((relationship) => relationship.isCurrent).length;
+  const draftCount = relationships.filter((relationship) => relationship.canonStatus === 'draft').length;
+  const confirmedCount = relationships.filter((relationship) => relationship.canonStatus === 'confirmed').length;
+  const archivedCount = relationships.filter((relationship) => relationship.canonStatus === 'archived').length;
 
   function handleTargetTypeChange(nextType: RelationshipTargetType) {
     setTargetType(nextType);
+    const nextOptions = relationshipTypeOptionsFor(nextType);
+    setRelationType(nextOptions[0]?.value ?? 'related_to');
     const first = targetOptions.find((option) => option.type === nextType && !(option.type === entityType && option.id === entityId));
     setTargetId(first?.id);
   }
 
+  function resetCreateForm() {
+    setDescription('');
+    setStartsAt('');
+    setEndsAt('');
+    setCanonStatus('draft');
+    setDirection('from_current');
+    setStrength(50);
+  }
+
   async function handleCreateRelationship() {
     if (!isPersistedEntityId(entityId) || !isPersistedEntityId(targetId) || !relationType.trim()) {
-      Notification.error({ title: t('messages.createFailed'), content: '请选择目标对象并填写关系类型' });
+      Notification.error({ title: t('messages.createFailed'), content: '请选择目标对象和关系类型' });
+      return;
+    }
+    if (selectedDedicatedRoute) {
+      Notification.warning({ title: '请使用专用面板', content: dedicatedRouteMessage });
       return;
     }
     setSaving(true);
     try {
+      const sourceType = direction === 'to_current' ? targetType : entityType;
+      const targetRelationshipType = direction === 'to_current' ? entityType : targetType;
       const input: RelationshipInput = {
-        sourceType: entityType,
-        sourceId: entityId,
-        targetType,
-        targetId,
+        sourceType,
+        sourceId: direction === 'to_current' ? targetId : entityId,
+        targetType: targetRelationshipType,
+        targetId: direction === 'to_current' ? entityId : targetId,
         relationType: relationType.trim(),
-        direction,
+        direction: direction === 'bidirectional' ? 'bidirectional' : 'directed',
         description: description.trim() || undefined,
-        importance,
+        startsAt: startsAt.trim() || undefined,
+        endsAt: endsAt.trim() || undefined,
+        canonStatus,
+        isCurrent: true,
         strength,
       };
+      const dedicatedRoute = dedicatedRelationshipRouteFor(sourceType, targetRelationshipType);
+      if (dedicatedRoute) {
+        Notification.warning({ title: '请使用专用面板', content: dedicatedRelationshipRouteMessage(dedicatedRoute) });
+        return;
+      }
       await createRelationship(projectId, input);
-      setDescription('');
-      setRelationType('related_to');
-      setDirection('directed');
-      setImportance(0);
-      setStrength(0);
+      resetCreateForm();
+      setSheetVisible(false);
       await refreshRelationships();
       Notification.success({ title: t('messages.saveSuccess') });
     } catch (error) {
@@ -1819,50 +2121,180 @@ function RelationshipsSection({ projectId, entityType, entityId, entityName }: {
     }
   }
 
-  return <section style={{ width: '100%', padding: '2px 0 14px', borderBottom: '1px solid var(--semi-color-border)' }}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-      <Title heading={5} style={{ margin: 0 }}>关系</Title>
-      <Text type="tertiary" size="small">{entityName}</Text>
+  return <section style={{ width: '100%', padding: '2px 0 14px' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+      <div>
+        <Title heading={5} style={{ margin: 0 }}>关系</Title>
+        <Text type="tertiary" size="small">{entityName} 的通用关系列表；成员、规则、势力等专用关系在下方对应面板管理。</Text>
+      </div>
+      <Button size="small" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setSheetVisible(true)}>新增关系</Button>
     </div>
-    <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
-      {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={3} />} loading /> : relationships.length === 0 ? <Text type="tertiary">暂无关系</Text> : relationships.map((relationship) => {
-        const sourceIsCurrent = relationship.sourceType === entityType && relationship.sourceId === entityId;
-        const otherType = sourceIsCurrent ? relationship.targetType : relationship.sourceType;
-        const otherId = sourceIsCurrent ? relationship.targetId : relationship.sourceId;
-        const other = optionByKey.get(`${otherType}:${otherId}`);
-        const connector = relationship.direction === 'bidirectional' ? '↔' : (sourceIsCurrent ? '→' : '←');
-        return <div key={relationship.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'start', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 10, background: 'var(--semi-color-bg-0)' }}>
+
+    <Card style={{ borderRadius: 12, marginBottom: 12 }} bodyStyle={{ padding: 12 }}>
+      <Space wrap spacing={8} style={{ rowGap: 8 }}>
+        <Text strong>共 {relationships.length} 条关联</Text>
+        <Tag color="green" size="small">当前有效 {currentCount}</Tag>
+        <StatusTag status="draft" label={`草稿 ${draftCount}`} />
+        <StatusTag status="confirmed" label={`已确认 ${confirmedCount}`} />
+        <StatusTag status="archived" label={`已归档 ${archivedCount}`} />
+        {relationshipTargetTypes.map((type) => {
+          const count = relationshipRows.filter((row) => row.otherType === type.value).length;
+          return count > 0 ? <Tag key={type.value} size="small">{type.label} {count}</Tag> : null;
+        })}
+      </Space>
+    </Card>
+
+    <Card style={{ borderRadius: 12, marginBottom: 12 }} bodyStyle={{ padding: 12 }}>
+      <Space wrap spacing={8} style={{ width: '100%', rowGap: 8 }}>
+        <Select value={typeFilter} onChange={(value) => setTypeFilter(value as RelationshipTargetType | 'all')} style={{ width: 150 }}>
+          <Select.Option value="all">全部类型</Select.Option>
+          {relationshipTargetTypes.map((type) => <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>)}
+        </Select>
+        <Select value={canonFilter} onChange={(value) => setCanonFilter(value as string)} style={{ width: 150 }}>
+          <Select.Option value="all">全部正史状态</Select.Option>
+          <Select.Option value="draft">草稿</Select.Option>
+          <Select.Option value="confirmed">已确认</Select.Option>
+          <Select.Option value="archived">已归档</Select.Option>
+        </Select>
+        <Input prefix={<IconSearch />} value={searchText} onChange={setSearchText} placeholder="搜索对象、关系或说明" style={{ width: 220 }} />
+        <Button size="small" theme={groupByType ? 'solid' : 'light'} type={groupByType ? 'primary' : 'tertiary'} onClick={() => setGroupByType((value) => !value)}>按类型分组</Button>
+      </Space>
+    </Card>
+
+    {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={4} />} loading /> : filteredRows.length === 0 ? <Empty title="暂无通用关系" description="可通过新增关系记录当前实体与其他对象的通用关系。" image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} /> : <div style={{ display: 'grid', gap: 12 }}>
+      {groupedRows.map(([groupTitle, rows]) => rows.length > 0 ? <div key={groupTitle} style={{ display: 'grid', gap: 10 }}>
+        {groupByType ? <Text strong>{groupTitle}</Text> : null}
+        {rows.map((row) => <div key={row.relationship.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'start', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 10, background: 'var(--semi-color-bg-0)' }}>
           <div style={{ minWidth: 0 }}>
             <Space wrap spacing={6} style={{ rowGap: 6 }}>
-              <Tag color="blue" size="small">{relationship.relationType}</Tag>
-              <Tag size="small">{connector}</Tag>
-              <Tag size="small">{entityTypeLabel(otherType)}：{other?.label ?? otherId}</Tag>
-              <Tag size="small">重要度 {relationship.importance ?? 0}</Tag>
-              {relationship.strength !== null && relationship.strength !== undefined ? <Tag size="small">强度 {relationship.strength}</Tag> : null}
-              {relationship.canonStatus ? <Tag size="small" color={relationship.canonStatus === 'confirmed' ? 'green' : undefined}>{relationship.canonStatus}</Tag> : null}
+              <Tag color="blue" size="small">{row.relationTypeLabel}</Tag>
+              <Tag size="small">通用关系</Tag>
+              <Tag size="small">{row.directionLabel}</Tag>
+              <Tag size="small">{row.otherTypeLabel}：{row.otherName}</Tag>
+              <Tag size="small">{row.currentLabel}</Tag>
+              {row.relationship.strength !== null && row.relationship.strength !== undefined ? <Tag size="small">强度 {row.relationship.strength}</Tag> : null}
+              <StatusTag status={row.relationship.canonStatus} />
             </Space>
-            {relationship.description ? <Paragraph style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{relationship.description}</Paragraph> : null}
+            {row.timeRange ? <Text type="tertiary" size="small" style={{ display: 'block', marginTop: 6 }}>{row.timeRange}</Text> : null}
+            {row.description ? <Paragraph ellipsis={{ rows: 2, showTooltip: true }} style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{row.description}</Paragraph> : null}
           </div>
-          <Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={() => handleDeleteRelationship(relationship.id)}>
+          <Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={() => handleDeleteRelationship(row.relationship.id)}>
             <Button icon={<IconDelete />} type="danger" theme="borderless" />
           </Popconfirm>
-        </div>;
-      })}
-    </div>
-    <div style={{ display: 'grid', gridTemplateColumns: '150px minmax(180px,1fr) minmax(160px,1fr) 130px', gap: 10, alignItems: 'start' }}>
-      <Select value={targetType} onChange={(value) => handleTargetTypeChange(value as RelationshipTargetType)} style={{ width: '100%' }}>{relationshipTargetTypes.map((type) => <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>)}</Select>
-      <Select value={targetId} placeholder="选择目标对象" onChange={(value) => setTargetId(value as string)} style={{ width: '100%' }}>{selectableTargets.map((option) => <Select.Option key={option.id} value={option.id}>{option.label}</Select.Option>)}</Select>
-      <Input value={relationType} onChange={setRelationType} placeholder="relation_type" />
-      <Select value={direction} onChange={(value) => setDirection(value as 'directed' | 'bidirectional')} style={{ width: '100%' }}><Select.Option value="directed">directed</Select.Option><Select.Option value="bidirectional">bidirectional</Select.Option></Select>
-      <Input value={description} onChange={setDescription} placeholder="关系说明" style={{ gridColumn: '1 / 3' }} />
-      <Input value={String(importance)} onChange={(value) => setImportance(Math.max(0, Number(value) || 0))} placeholder="重要度" />
-      <Input value={String(strength)} onChange={(value) => setStrength(Math.max(0, Number(value) || 0))} placeholder="强度" />
-      <Space wrap spacing={6} style={{ gridColumn: '1 / -1', rowGap: 6 }}>
-        {relationshipTypeOptions.map((type) => <Button key={type} size="small" theme={relationType === type ? 'solid' : 'light'} type={relationType === type ? 'primary' : 'tertiary'} onClick={() => setRelationType(type)}>{type}</Button>)}
-        <Button size="small" theme="solid" type="primary" loading={saving} disabled={!targetId} onClick={handleCreateRelationship}>{t('actions.add')}</Button>
+        </div>)}
+      </div> : null)}
+    </div>}
+
+    <SideSheet title="新增通用关系" visible={sheetVisible} onCancel={() => setSheetVisible(false)} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => setSheetVisible(false)}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} disabled={saveRelationshipDisabled} onClick={handleCreateRelationship}>{t('actions.save')}</Button></div>}>
+      <Space vertical align="start" spacing={14} style={{ width: '100%' }}>
+        <Text type="tertiary">当前实体：{entityName} · {entityTypeLabel(entityType)}</Text>
+        <Select value={targetType} onChange={(value) => handleTargetTypeChange(value as RelationshipTargetType)} style={{ width: '100%' }}>
+          {relationshipTargetTypes.map((type) => <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>)}
+        </Select>
+        <Select value={targetId} placeholder="选择目标对象" onChange={(value) => setTargetId(value as string)} filter style={{ width: '100%' }}>
+          {selectableTargets.map((option) => <Select.Option key={`${option.type}:${option.id}`} value={option.id}>{option.label}{option.summary ? ` · ${option.summary}` : ''}</Select.Option>)}
+        </Select>
+        <Select value={direction} onChange={(value) => setDirection(value as RelationshipDirectionInput)} style={{ width: '100%' }}>
+          <Select.Option value="from_current">{entityName} → 目标</Select.Option>
+          <Select.Option value="to_current">目标 → {entityName}</Select.Option>
+          <Select.Option value="bidirectional">双向</Select.Option>
+        </Select>
+        {selectedDedicatedRoute ? <Card style={{ width: '100%', borderRadius: 10, borderColor: 'var(--semi-color-warning-light-default)', background: 'var(--semi-color-warning-light-default)' }} bodyStyle={{ padding: 12 }}>
+          <Text strong style={{ display: 'block', marginBottom: 4 }}>请改用专用关系面板</Text>
+          <Text size="small">{dedicatedRouteMessage}</Text>
+        </Card> : null}
+        <Select value={relationType} onChange={(value) => setRelationType(value as string)} placeholder="关系类型" style={{ width: '100%' }}>
+          {targetRelationTypes.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
+        </Select>
+        <div style={{ width: '100%' }}>
+          <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 6 }}>强度：{strength}</Text>
+          <Input value={String(strength)} onChange={(value) => setStrength(Math.max(0, Math.min(100, Number(value) || 0)))} placeholder="0-100" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, width: '100%' }}>
+          <Input value={startsAt} onChange={setStartsAt} placeholder="开始阶段 / 章节（可选）" />
+          <Input value={endsAt} onChange={setEndsAt} placeholder="结束阶段 / 章节（可选）" />
+        </div>
+        <Input value={description} onChange={setDescription} placeholder="说明：这段关系为什么重要？" style={{ width: '100%' }} />
+        <Select value={canonStatus} onChange={(value) => setCanonStatus(value as string)} style={{ width: '100%' }}>
+          <Select.Option value="draft">草稿</Select.Option>
+          <Select.Option value="confirmed">已确认</Select.Option>
+          <Select.Option value="archived">已归档</Select.Option>
+        </Select>
       </Space>
-    </div>
+    </SideSheet>
   </section>;
+}
+
+
+type RelationshipDisplayRow = {
+  relationship: Relationship;
+  otherType: RelationshipEntityType;
+  otherTypeLabel: string;
+  otherName: string;
+  relationTypeLabel: string;
+  directionLabel: string;
+  description: string;
+  timeRange: string;
+  currentLabel: string;
+  canonLabel: string;
+};
+
+function relationshipTypeOptionsFor(targetType: RelationshipTargetType) {
+  return relationshipTypeOptionsByTargetType[targetType] ?? defaultRelationshipTypeOptions;
+}
+
+function dedicatedRelationshipRouteFor(sourceType: RelationshipTargetType, targetType: RelationshipTargetType) {
+  return dedicatedRelationshipRoutes.find((route) => {
+    const sameOrder = route.sourceType === sourceType && route.targetType === targetType;
+    const reverseOrder = route.sourceType === targetType && route.targetType === sourceType;
+    return sameOrder || reverseOrder;
+  });
+}
+
+function dedicatedRelationshipRouteMessage(route: DedicatedRelationshipRoute) {
+  return route.message;
+}
+
+function allRelationshipTypeOptions() {
+  const options = new Map<string, SelectOption>();
+  [...defaultRelationshipTypeOptions, ...Object.values(relationshipTypeOptionsByTargetType).flat()].forEach((option) => options.set(option.value, option));
+  return [...options.values()];
+}
+
+function relationshipDisplayModel(relationship: Relationship, entityType: RelationshipTargetType, entityId: string, entityName: string, optionByKey: Map<string, RelationshipTargetOption>): RelationshipDisplayRow {
+  const sourceIsCurrent = relationship.sourceType === entityType && relationship.sourceId === entityId;
+  const otherType = sourceIsCurrent ? relationship.targetType : relationship.sourceType;
+  const otherId = sourceIsCurrent ? relationship.targetId : relationship.sourceId;
+  const other = optionByKey.get(`${otherType}:${otherId}`);
+  const directionLabel = relationship.direction === 'bidirectional'
+    ? `${entityName} ↔ ${other?.label ?? '目标'}`
+    : sourceIsCurrent ? `${entityName} → ${other?.label ?? '目标'}` : `${other?.label ?? '目标'} → ${entityName}`;
+  const timeRange = [relationship.startsAt ? `开始：${relationship.startsAt}` : '', relationship.endsAt ? `结束：${relationship.endsAt}` : ''].filter(Boolean).join(' · ');
+  return {
+    relationship,
+    otherType,
+    otherTypeLabel: entityTypeLabel(otherType),
+    otherName: other?.label ?? otherId,
+    relationTypeLabel: relationshipTypeLabel(relationship.relationType),
+    directionLabel,
+    description: relationship.description ?? '',
+    timeRange,
+    currentLabel: relationship.isCurrent ? '当前有效' : '历史关系',
+    canonLabel: statusLabel(relationship.canonStatus, '未标记'),
+  };
+}
+
+function groupRowsByType(rows: RelationshipDisplayRow[]): Array<readonly [string, RelationshipDisplayRow[]]> {
+  const grouped = new Map<string, RelationshipDisplayRow[]>();
+  rows.forEach((row) => {
+    const key = row.otherTypeLabel;
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  });
+  return [...grouped.entries()];
+}
+
+function relationshipTypeLabel(value?: string | null) {
+  return allRelationshipTypeOptions().find((option) => option.value === value)?.label ?? value ?? '';
 }
 
 function entityTypeLabel(type: RelationshipEntityType) {
@@ -1900,6 +2332,14 @@ function ModuleShell({ title, description, action, children }: { title: string; 
   return <div><section style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 16 }}><div><Title heading={3} style={{ margin: 0 }}>{title}</Title><Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>{description}</Text></div>{action}</section>{children}</div>;
 }
 
+function ReadonlyRelationSummary({ groups, values }: { groups: DetailGroup[]; values: Record<string, unknown> }) {
+  if (groups.length === 0) return null;
+  return <section style={{ width: '100%', padding: '2px 0 14px', borderBottom: '1px solid var(--semi-color-border)' }}>
+    <Title heading={5} style={{ margin: '0 0 10px' }}>关系摘要（只读）</Title>
+    <GroupedDetails groups={groups} values={values} />
+  </section>;
+}
+
 function GroupedDetails({ groups, values }: { groups: DetailGroup[]; values: Record<string, unknown> }) {
   return <div style={{ display: 'grid', gap: 16 }}>{groups.map((group) => <section key={group.title} style={{ width: '100%', padding: '2px 0 14px', borderBottom: '1px solid var(--semi-color-border)' }}><Title heading={5} style={{ margin: '0 0 10px' }}>{group.title}</Title><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', columnGap: 24, rowGap: 14 }}>{group.fields.map((field) => <DetailCard key={field.key} field={field} value={values[field.key]} />)}</div></section>)}</div>;
 }
@@ -1908,10 +2348,15 @@ function DetailCard({ field, value }: { field: DetailField; value: unknown }) {
   const empty = isEmptyDisplayValue(value);
   const relation = isRelationField(field.key);
   const items = relationItems(value);
-  const text = displayText(value);
+  const text = displayFieldValue(field, value);
   const shouldSpan = relation ? items.length > 2 : Boolean(field.long && !empty && text.length > 48);
+  const statusLike = isStatusField(field.key) && !empty;
 
-  return <div style={{ gridColumn: shouldSpan ? '1 / -1' : undefined, minWidth: 0, padding: shouldSpan ? '2px 0 8px' : '2px 0 6px' }}><Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 4, lineHeight: 1.35 }}>{field.label}</Text>{relation && items.length > 0 ? <Space wrap spacing={6} style={{ rowGap: 6 }}>{items.map((item) => <Tag key={item} size="small">{item}</Tag>)}</Space> : <Paragraph type={empty ? 'tertiary' : undefined} ellipsis={!shouldSpan ? { rows: 2, showTooltip: true } : undefined} style={{ whiteSpace: shouldSpan ? 'pre-wrap' : undefined, margin: 0, lineHeight: 1.55 }}>{text}</Paragraph>}</div>;
+  return <div style={{ gridColumn: shouldSpan ? '1 / -1' : undefined, minWidth: 0, padding: shouldSpan ? '2px 0 8px' : '2px 0 6px' }}><Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 4, lineHeight: 1.35 }}>{field.label}</Text>{relation && items.length > 0 ? <Space wrap spacing={6} style={{ rowGap: 6 }}>{items.map((item) => <Tag key={item} size="small">{item}</Tag>)}</Space> : statusLike ? <Tag size="small" color={statusColor(String(value))}>{text}</Tag> : <Paragraph type={empty ? 'tertiary' : undefined} ellipsis={!shouldSpan ? { rows: 2, showTooltip: true } : undefined} style={{ whiteSpace: shouldSpan ? 'pre-wrap' : undefined, margin: 0, lineHeight: 1.55 }}>{text}</Paragraph>}</div>;
+}
+
+function isStatusField(fieldKey: string) {
+  return fieldKey === 'status' || fieldKey === 'lifecycleStatus' || fieldKey === 'visibility' || fieldKey === 'canonStatus' || fieldKey === 'sourceType' || fieldKey === 'rarity' || fieldKey === 'lifeStatus';
 }
 
 function GroupedForm({ groups, nameLabel, namePlaceholder, longFields }: { groups: DetailGroup[]; nameLabel?: string; namePlaceholder?: string; longFields?: Set<string> }) {

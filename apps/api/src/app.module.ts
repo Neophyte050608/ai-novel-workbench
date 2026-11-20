@@ -17,6 +17,8 @@ import { StoryItemsModule } from './modules/story-items/story-items.module';
 import { AbilitiesModule } from './modules/abilities/abilities.module';
 import { RelationshipsModule } from './modules/relationships/relationships.module';
 import { WorldItemsModule } from './modules/world-items/world-items.module';
+import { ChaptersModule } from './modules/chapters/chapters.module';
+import { ScenesModule } from './modules/scenes/scenes.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { WorldItemsModule } from './modules/world-items/world-items.module';
     AbilitiesModule,
     RelationshipsModule,
     WorldItemsModule,
+    ChaptersModule,
+    ScenesModule,
   ],
 })
 export class AppModule {}

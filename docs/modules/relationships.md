@@ -1,165 +1,849 @@
-# Relationship 统一关系层
+# Relationships / 关系页设计
 
-## 1. 定位
+> 状态：设计稿 v0.1  
+> 日期：2026-11-20  
+> 范围：实体关系页、关系展示、关系创建、关系 Tab 信息架构  
+> 不包含：关系时间线系统、AI 自动抽取关系、复杂图谱、关系冲突审稿
 
-`Relationship` 是项目内两个实体之间的通用、低频、跨实体连接层。它用于表达“没有专属业务结构承载、但对创作上下文有价值”的连接，例如人物与地点的羁绊、道具与人物的归属线索、能力与势力的传承来源。
+---
 
-Relationship 不是万能关系表，也不是为了省建模成本而把所有关联都塞进一张表。凡是关系本身有明确领域语义、生命周期、查询频率或专属字段，应优先使用专表。
+## 1. 模块定位
 
-## 2. 使用边界
+关系不是实体详情里的一个普通字段。
 
-### 2.1 什么时候使用专表
+在小说创作中，关系是故事复杂度的核心来源：
 
-使用专表的条件：
+```txt
+人物和人物之间的情感、利益、秘密
+人物和势力之间的身份、立场、背叛
+地点和势力之间的控制、争夺、管辖
+道具和人物之间的拥有、继承、争夺
+世界规则和实体之间的约束、例外、违反
+```
 
-1. 关系是核心业务对象，有稳定的领域字段。
-2. 关系需要高频展示、筛选、排序或聚合。
-3. 关系有自己的子状态、时间线、权重规则或业务动作。
-4. 关系会被 Context Builder 以固定结构读取。
-5. 关系需要强约束，例如唯一性、外键、专属删除策略。
+因此，关系应成为实体详情中的独立页签，而不是继续挤在基础信息下方。
 
-本项目中以下关系必须继续使用专表，不要用 Relationship 替代：
+核心原则：
 
-- `FactionMembership`：人物与势力成员关系，包含职位、部门、公开状态、任期等字段。
-- `LocationFaction`：地点与势力控制/影响关系，包含影响等级、当前状态、起止时间等字段。
-- `FactionRelation`：势力之间关系，包含势力关系专属语义。
-- `LocationRule`：地点受世界规则影响的专属关联。
-- `FactionRule`：势力受世界规则影响的专属关联。
-- `SpeciesRule`：物种受世界规则影响的专属关联。
-- `StoryItemRule`：道具受世界规则影响的专属关联。
-- `AbilityRule`：能力受世界规则影响的专属关联。
+```txt
+关系是实体网络，不是实体字段。
+关系页是统一入口，不是各模块的小表单。
+P1 先整理现有关系，不大改 schema。
+P2 再增强专用关系创建。
+P3 再接关系演化、图谱、AI 建议。
+```
 
-### 2.2 什么时候使用 Relationship
+---
 
-使用 Relationship 的条件：
+## 2. 与“时间变化”的边界
 
-1. 关系跨两个实体，但暂时没有足够稳定的专属字段。
-2. 关系较低频，主要用于详情页补充和 Context Builder 背景读取。
-3. 关系语义可由 `relationType` + `description` 表达。
-4. 关系两端实体都属于同一 Project 且未删除。
-5. 后续若某类关系变高频或领域语义稳定，可以迁出为专表。
+用户已确认：小说中的人物、地点、势力、关系都会随时间变化。
 
-典型例子：
+但 P1 不直接实现完整时间线系统。
 
-- 人物与地点：`born_in`、`haunts`、`protects_place`。
-- 人物与道具：`owns`、`seeks`、`lost`。
-- 人物与能力：`uses`、`learns`、`sealed_by`。
-- 地点与物种：`habitat_of`、`forbidden_to`。
-- 势力与能力：`teaches`、`monopolizes`。
-- 道具与能力：`amplifies`、`contains`。
+本模块只保留未来演化所需的最小字段和设计边界：
 
-## 3. 字段语义
+```txt
+startsAt
+endsAt
+isCurrent
+canonStatus
+说明文本
+来源证据
+```
 
-| 字段 | 语义 |
+关系演化、关系版本、章节范围、读者知情变化、角色知情变化，后续应统一进入更大的“状态演化 / 时间线 / 连续性”设计。
+
+P1 关系页只回答：
+
+```txt
+当前有哪些关系？
+这些关系来自哪里？
+是否当前有效？
+是否正史确认？
+有没有起止阶段说明？
+```
+
+P1 不回答：
+
+```txt
+这个关系每一章如何变化？
+谁什么时候知道这层关系？
+读者什么时候知道？
+关系变化是否造成连续性冲突？
+```
+
+这些后置。
+
+---
+
+## 3. 关系 Tab 在实体详情中的位置
+
+所有核心实体详情页都应有独立 `关系` Tab。
+
+示例：
+
+### Character 详情
+
+```txt
+概览
+身份
+状态
+关系
+上下文
+```
+
+### Location 详情
+
+```txt
+概览
+状态
+关系
+规则
+上下文
+```
+
+### Faction 详情
+
+```txt
+概览
+状态
+关系
+成员
+规则
+上下文
+```
+
+### WorldRule 详情
+
+```txt
+概览
+适用对象
+关系
+上下文
+```
+
+关系不再放在基础档案底部，也不再和状态/身份混在同一个长页面里。
+
+---
+
+## 4. P1 关系页布局
+
+P1 采用列表型关系页，不做大型图谱。
+
+结构：
+
+```txt
+关系 Tab
+├── 关系概览
+├── 筛选区
+├── 关系列表
+├── 关系详情抽屉
+└── 新增关系抽屉
+```
+
+---
+
+## 5. 关系概览
+
+顶部展示当前实体的关系摘要。
+
+示例：
+
+```txt
+关系
+
+共有 18 条关联
+当前有效 14 条 · 草稿 3 条 · 已归档 1 条
+
+[人物 5] [地点 2] [势力 4] [规则 3] [道具 2] [能力 2]
+```
+
+统计维度：
+
+```txt
+总关系数
+当前有效数
+草稿 / 已确认 / 已归档数
+按目标类型统计
+按关系来源统计
+```
+
+关系来源包括：
+
+```txt
+通用关系
+成员关系
+势力关系
+地点控制
+地点规则
+势力规则
+物种规则
+道具规则
+能力规则
+```
+
+---
+
+## 6. 筛选区
+
+筛选区位于概览下方。
+
+```txt
+[全部类型] [全部来源] [当前有效] [全部正史状态] [搜索对象或说明] [+ 新增关系]
+```
+
+筛选项：
+
+| 筛选项 | 说明 |
 |---|---|
-| `sourceType` | 来源端实体类型。合法值见“支持的实体类型”。 |
-| `sourceId` | 来源端实体 ID。必须属于当前 Project 且未删除。 |
-| `targetType` | 目标端实体类型。合法值见“支持的实体类型”。 |
-| `targetId` | 目标端实体 ID。必须属于当前 Project 且未删除。 |
-| `relationType` | 关系类型，必填，使用 snake_case 建议值或项目内约定值。 |
-| `description` | 面向作者和上下文的自然语言说明。 |
-| `strength` | 关系强度，非负整数；含义由关系类型解释。 |
-| `importance` | 关系重要度，非负整数；Context Builder 可用于排序和预算裁剪。 |
-| `direction` | 方向，默认 `directed`；可为 `directed` / `bidirectional`。 |
-| `isCurrent` | 是否当前仍有效，默认 `true`。历史关系可设为 `false` 或归档。 |
-| `startsAt` | 关系开始阶段，使用章节、阶段名或世界内时间文本。 |
-| `endsAt` | 关系结束阶段，使用章节、阶段名或世界内时间文本。 |
-| `canonStatus` | 生命周期：`draft` / `confirmed` / `archived`，默认 `draft`。 |
-| `evidenceType` | 证据来源类型，例如 `chapter`、`chapter_summary`、`generation_task`、`user_note`。 |
-| `evidenceId` | 证据来源 ID。第一版不强制外键，供追溯使用。 |
-| `deletedAt` | 软删除时间；普通列表和 Context Builder 默认排除。 |
+| 目标类型 | 人物 / 地点 / 势力 / 物种 / 道具 / 能力 / 世界规则 / 世界设定 |
+| 关系来源 | 通用关系 / 成员关系 / 势力关系 / 地点控制 / 规则适用 |
+| 当前状态 | 当前有效 / 历史关系 / 全部 |
+| canonStatus | draft / confirmed / archived |
+| 方向 | 指向外部 / 指向当前实体 / 双向 |
+| 搜索 | 搜目标名称、关系类型、说明 |
 
-## 4. 支持的实体类型
+P1 视图：
 
-API 支持以下 `sourceType` / `targetType`：
+```txt
+列表
+按类型分组
+```
 
-- `character`
-- `location`
-- `faction`
-- `species`
-- `story_item`（对应 Prisma `StoryItem`）
-- `ability`
-- `world_rule`
-- `world_item`
-- `chapter`
-- `chapter_plan`
+P2/P3 再考虑：
 
-第一版 UI 仅暴露：`character` / `location` / `faction` / `species` / `story_item` / `ability` / `world_rule` / `world_item`。`chapter` / `chapter_plan` 由 API 先支持，待章节和规划 UI 成熟后再接入选择器。
+```txt
+网络图
+时间线
+家族树
+势力图
+```
 
-## 5. relationType 建议值
+---
 
-`relationType` 使用 snake_case。建议按实体关系分类维护，项目可扩展但应避免同义词泛滥。
+## 7. 关系列表
 
-### 5.1 人物相关
+列表统一展示 generic Relationship 和专用关系表。
 
-- 人物 ↔ 人物：`ally`、`rival`、`enemy`、`mentor`、`student`、`family`、`romantic`、`owes_debt_to`。
-- 人物 ↔ 地点：`born_in`、`lives_in`、`visited`、`protects_place`、`exiled_from`、`haunts`。
-- 人物 ↔ 势力：低频补充可用 `associated_with`、`opposes`；正式成员关系必须用 `FactionMembership`。
-- 人物 ↔ 道具：`owns`、`seeks`、`lost`、`created`、`inherited`。
-- 人物 ↔ 能力：`uses`、`learns`、`teaches`、`sealed_by`、`countered_by`。
+每行展示：
 
-### 5.2 世界观实体相关
+```txt
+关系类型
+当前实体方向
+另一端对象
+关系来源
+强度 / 重要度
+当前状态
+canonStatus
+时间范围
+说明摘要
+```
 
-- 地点 ↔ 地点：`near`、`contains_path_to`、`hidden_within`、`mirrors`。
-- 地点 ↔ 物种：`habitat_of`、`forbidden_to`、`origin_of`。
-- 地点 ↔ 道具：`contains`、`hides`、`produces`、`requires_item`。
-- 势力 ↔ 物种：`protects`、`hunts`、`descended_from`、`allied_with_species`。
-- 势力 ↔ 能力：`teaches`、`monopolizes`、`forbids`、`researches`。
-- 物种 ↔ 能力：`innate_ability`、`can_awaken`、`vulnerable_to`。
-- 道具 ↔ 能力：`amplifies`、`contains`、`requires_ability`、`suppresses`。
+示例：
 
-### 5.3 规则、章节与计划相关
+```txt
+成员
+林青 → 青云宗                         成员关系 · 当前有效 · 已确认
+外门弟子，后期成为内门候选。
+第一卷第 3 章起
 
-- 实体 ↔ 世界规则：低频解释可用 `influenced_by`、`exception_to`；正式规则关联必须用 `LocationRule` / `FactionRule` / `SpeciesRule` / `StoryItemRule` / `AbilityRule`。
-- 实体 ↔ 章节：`appears_in`、`revealed_in`、`foreshadowed_in`。
-- 实体 ↔ 章节计划：`planned_for`、`depends_on_plan`、`conflicts_with_plan`。
+控制
+青云宗 → 后山禁地                     地点控制 · 当前有效 · 已确认
+青云宗名义上管辖禁地入口，但无法完全控制内部封印。
 
-## 6. API 设计
+受规则约束
+后山禁地 → 禁止御剑规则               地点规则 · 当前有效 · 已确认
+禁地内御剑会触发护山禁制。
+```
 
-Base path：`/projects/:projectId/relationships`
+来源标签：
 
-- `GET /projects/:projectId/relationships`
-  - 查询项目内关系，默认排除软删除。
-  - 支持筛选：`sourceType/sourceId`、`targetType/targetId`、`entityType/entityId`（source 或 target 命中）、`relationType`、`canonStatus`、`isCurrent`、`page/pageSize`。
-  - 返回：`{ items, page, pageSize, total }`。
-- `POST /projects/:projectId/relationships`
-  - 创建关系，默认 `direction=directed`、`canonStatus=draft`、`isCurrent=true`。
-  - 校验 Project 存在、两端实体合法且同项目、source/target 不完全相同、`relationType` 非空、`importance/strength` 非负整数。
-  - 对 `projectId + source + target + relationType + isCurrent=true + deletedAt=null` 做弱重复检测，命中返回 Conflict。
-- `GET /projects/:projectId/relationships/:relationshipId`
-  - 读取单条关系，并校验项目边界。
-- `PATCH /projects/:projectId/relationships/:relationshipId`
-  - 更新关系基础字段；若修改端点，重新校验端点边界和重复关系。
-- `DELETE /projects/:projectId/relationships/:relationshipId`
-  - 软删除，写入 `deletedAt`。
-- `POST /projects/:projectId/relationships/:relationshipId/confirm`
-  - 将 `canonStatus` 置为 `confirmed`。
-- `POST /projects/:projectId/relationships/:relationshipId/archive`
-  - 将 `canonStatus` 置为 `archived`。
+| 来源表 | UI 标签 |
+|---|---|
+| Relationship | 通用关系 |
+| FactionMembership | 成员关系 |
+| FactionRelation | 势力关系 |
+| LocationFaction | 地点控制 |
+| LocationRule | 地点规则 |
+| FactionRule | 势力规则 |
+| SpeciesRule | 物种规则 |
+| StoryItemRule | 道具规则 |
+| AbilityRule | 能力规则 |
 
-## 7. UI 设计
+---
 
-第一版在工作台实体详情的“关系”分组中接入真实关系，不使用 tabs / 折叠，保持长页面分组。
+## 8. 关系详情抽屉
 
-详情页行为：
+点击关系列表行，打开关系详情抽屉。
 
-1. 选择实体后，通过 `entityType/entityId` 查询当前实体相关关系。
-2. 关系列表展示方向、另一端实体类型、另一端名称/ID、`relationType`、`description`、`strength`、`importance`。
-3. 新增关系需要选择：目标类型、目标对象、关系类型、方向、说明、重要度、强度。
-4. 删除关系调用 Relationship DELETE，执行软删除。
-5. 目标对象选择按类型加载实体列表：人物、地点、势力、物种、道具、能力、世界规则、通用世界设定。章节和章节计划暂不在第一版 UI 暴露。
-6. 不显示 AI 相关按钮。
+### generic Relationship 详情
 
-## 8. Context Builder 读取规则
+```txt
+林青 → 沈砚
+关系：师徒
+方向：单向
+强度：80
+重要度：5
+当前有效：是
+开始：第一卷第 3 章
+结束：—
+正史状态：已确认
+说明：沈砚收林青为徒，但隐藏真实目的。
+```
 
-1. Context Builder 不通过 HTTP 调用 Relationship API，应注入 `RelationshipsService` 或后续专门的领域查询接口。
-2. 默认读取 `canonStatus=confirmed`、`isCurrent=true`、`deletedAt=null` 的关系。
-3. 草稿关系只有在用户明确选择草稿上下文、调试模式或生成任务策略允许时读取。
-4. 默认按 `importance desc`、`updatedAt desc` 排序，并根据上下文预算裁剪。
-5. 读取实体上下文时，使用 `entityType/entityId` 查询 source 或 target 命中的关系。
-6. `direction=bidirectional` 表示两端语义对等；`direction=directed` 时 Prompt 渲染应保留 source → target 方向。
-7. 专属关系表的数据由各自模块提供给 Context Builder；Relationship 只补充通用低频连接，不覆盖专表结果。
+### FactionMembership 详情
 
-## 9. P1 落地范围
+```txt
+林青 → 青云宗
+来源：成员关系
+身份：外门弟子
+职位：杂役弟子
+部门：外门
+是否公开：是
+当前有效：是
+开始：第一卷第 3 章
+正史状态：已确认
+说明：通过入门试炼进入青云宗。
+```
 
-本阶段已落地统一关系层的最小闭环：后端提供 `list/create/detail/update/delete/confirm/archive`，列表支持 `entityType/entityId` 双向查询；创建和更新会校验实体类型、Project 边界、软删除状态、端点不能完全相同、默认 `draft/isCurrent/directed` 和活动关系弱重复。工作台实体详情页使用真实 Relationship 数据展示“关系”分组，并支持在已接入实体之间新增、删除关系。
+### Rule 关系详情
+
+```txt
+后山禁地 → 禁止御剑规则
+来源：地点规则
+关系类型：适用
+是否主要规则：是
+执行强度：高
+说明：禁地内御剑会触发护山禁制。
+```
+
+---
+
+## 9. 新增关系流程
+
+新增关系从关系 Tab 右上角进入。
+
+```txt
++ 新增关系
+```
+
+表单流程：
+
+```txt
+目标类型
+  -> 目标对象
+  -> 关系类型
+  -> 方向
+  -> 强度
+  -> 时间范围
+  -> 说明
+  -> canonStatus
+```
+
+表单示例：
+
+```txt
+新增关系
+
+当前实体：林青 · 人物
+
+目标类型：[人物]
+目标对象：[搜索并选择...]
+关系类型：[师徒]
+方向：[林青 → 目标] [目标 → 林青] [双向]
+强度：[弱 —— 中 —— 强]
+开始阶段：[第一卷第 3 章]
+结束阶段：[可选]
+说明：[这段关系为什么重要？]
+正史状态：[草稿]
+```
+
+P1 保存到 generic `Relationship`。
+
+P2 再根据目标类型和关系类型引导到专用表。
+
+---
+
+## 10. 关系类型动态推荐
+
+关系类型根据：
+
+```txt
+当前实体类型 + 目标类型 + 是否存在专用关系表
+```
+
+动态变化。
+
+### Character → Character
+
+```txt
+亲属
+师徒
+恋人
+朋友
+敌人
+同盟
+竞争者
+救命恩人
+秘密身份
+自定义
+```
+
+### Character → Location
+
+```txt
+出生于
+居住于
+曾到访
+守护
+被放逐自
+失踪于
+被封印于
+自定义
+```
+
+### Character → Faction
+
+优先提示成员语义：
+
+```txt
+成员
+领袖
+长老
+弟子
+卧底
+叛徒
+被追捕
+合作
+自定义
+```
+
+### Faction → Faction
+
+```txt
+联盟
+敌对
+附庸
+竞争
+控制
+分裂
+贸易
+停战
+自定义
+```
+
+### Location → Faction
+
+```txt
+控制
+占据
+管辖
+影响
+争夺
+曾经控制
+秘密据点
+自定义
+```
+
+### Entity → WorldRule
+
+```txt
+适用
+豁免
+违反
+利用
+维护
+对抗
+主要规则
+次要规则
+自定义
+```
+
+### Character → StoryItem
+
+```txt
+拥有
+使用
+继承
+寻找
+遗失
+封印
+争夺
+自定义
+```
+
+### Character → Ability
+
+```txt
+使用
+学习
+传授
+被封印
+被克制
+自定义
+```
+
+---
+
+## 11. EntityRelationsPanel
+
+P1 设计一个统一组件：
+
+```txt
+EntityRelationsPanel
+```
+
+输入：
+
+```txt
+projectId
+entityType
+entityId
+entityName
+```
+
+支持实体：
+
+```txt
+character
+location
+faction
+species
+world_rule
+story_item
+ability
+world_item
+```
+
+P1 数据来源：
+
+```txt
+Relationship
+FactionMembership
+FactionRelation
+LocationFaction
+LocationRule
+FactionRule
+SpeciesRule
+StoryItemRule
+AbilityRule
+```
+
+根据当前实体类型决定读取哪些专用关系。
+
+---
+
+## 12. Relationship 与专用关系表边界
+
+### generic Relationship 适合
+
+```txt
+低频关系
+跨实体弱关系
+语义补充
+证据引用
+呼应关系
+暂时没有专用表的关系
+```
+
+### 专用关系表适合
+
+```txt
+高频核心关系
+需要专门字段的关系
+会被 Context Builder 高频读取的关系
+有清晰业务语义的关系
+```
+
+示例：
+
+| 关系 | 推荐存储 |
+|---|---|
+| 人物属于势力 | FactionMembership |
+| 势力敌对势力 | FactionRelation |
+| 地点受势力控制 | LocationFaction |
+| 地点适用规则 | LocationRule |
+| 势力适用规则 | FactionRule |
+| 物种适用规则 | SpeciesRule |
+| 人物与人物是朋友 | Relationship |
+| 人物拥有道具 | Relationship，后续可升级专用关系 |
+| 事件呼应世界规则 | Relationship |
+
+---
+
+## 13. P1 / P2 / P3 分期
+
+### P1：统一关系 Tab
+
+目标：把关系从实体基础信息中独立出来。
+
+包含：
+
+```txt
+EntityRelationsPanel
+关系概览
+关系列表
+筛选
+新增 generic Relationship
+目标对象选择器
+关系类型动态推荐
+专用关系只读展示或跳转编辑
+```
+
+不包含：
+
+```txt
+图谱视图
+AI 自动抽取
+时间线演变
+复杂关系冲突检测
+专用关系全量统一编辑
+```
+
+### P2：专用关系增强
+
+包含：
+
+```txt
+从关系 Tab 创建 FactionMembership
+从关系 Tab 创建 FactionRelation
+从关系 Tab 创建 LocationFaction
+从关系 Tab 创建 Rule 关系
+关系类型字典
+重复关系检测
+批量确认 / 归档
+```
+
+### P3：图谱、演化、AI 辅助
+
+包含：
+
+```txt
+局部关系图
+势力图
+家族树
+AI 建议关系
+关系冲突检测
+章节/时间范围演化
+Context Builder 关系预览
+```
+
+---
+
+## 14. 不负责什么
+
+P1 不负责：
+
+```txt
+不大改 schema
+不迁移专用关系表
+不做大型图谱
+不做 AI 关系抽取
+不做时间线系统
+不做关系演化版本
+不把所有关系强行合成一张表
+```
+
+关系 Tab 不替代：
+
+```txt
+人物基础档案
+地点详情
+势力成员管理
+世界规则内容编辑
+状态演化系统
+连续性审稿系统
+```
+
+---
+
+## 15. 验收标准
+
+### 信息架构验收
+
+```txt
+实体详情中有独立关系 Tab。
+关系信息不再挤在基础信息区域。
+用户能在统一位置查看当前实体的全部关系。
+```
+
+### 列表验收
+
+每条关系至少展示：
+
+```txt
+另一端对象
+关系类型
+方向
+来源
+当前状态
+canonStatus
+时间范围
+说明摘要
+```
+
+### 新增关系验收
+
+```txt
+无需手填 ID。
+先选目标类型。
+再选目标对象。
+关系类型随目标类型变化。
+方向使用自然语言。
+保存后出现在关系列表。
+```
+
+### 边界验收
+
+```txt
+P1 不做图谱。
+P1 不接 AI。
+P1 不改 schema。
+P1 不强行统一编辑所有专用表。
+```
+
+---
+
+## 16. 当前推荐落地顺序
+
+1. 先在 Character 详情中加入关系 Tab。
+2. 把现有 Character 关系区移动进去。
+3. 抽 `EntityRelationsPanel`。
+4. 接入 generic Relationship。
+5. 接入 FactionMembership 只读展示。
+6. 扩展到 Location / Faction / WorldRule。
+7. 最后再考虑图谱和时间演化。
+
+---
+
+## 17. 面向 AI 的关系写入与建议机制
+
+关系页后续不仅服务人工维护，也要开放给 AI 使用。
+
+但 AI 不应直接绕过用户，把推测关系写成正式关系。关系是小说世界观的结构骨架，AI 只能进入“建议 / 草稿 / 待确认”流程。
+
+### 17.1 AI 可以做什么
+
+AI 后续可以：
+
+```txt
+从章节正文中发现关系
+从场景摘要中发现关系变化
+从 SceneHandoff 中发现开放关系
+从人物/地点/势力设定中抽取潜在关系
+发现某个实体缺少必要关系
+建议某条关系进入 Context Builder
+建议关系类型、方向、强度、说明
+```
+
+示例：
+
+```txt
+AI 发现：林青 与 青云宗 存在“成员”关系
+证据：第一章中写到“林青通过试炼成为青云宗外门弟子”
+建议存储：FactionMembership
+状态：draft
+置信度：0.86
+```
+
+### 17.2 AI 不能直接做什么
+
+P1/P2 阶段，AI 不应直接：
+
+```txt
+自动创建 confirmed 关系
+自动覆盖用户已确认关系
+自动删除关系
+自动合并实体
+自动把“同场出现”当作强关系
+自动把所有提及都变成 Relationship
+```
+
+AI 生成的关系必须默认进入：
+
+```txt
+draft
+sourceType = ai_suggestion / scene_summary / chapter_summary / memory_record
+sourceId = 对应来源 ID
+confidence = 建议置信度（后续字段或建议队列承载）
+```
+
+### 17.3 AI 关系建议队列
+
+后续建议新增“AI 关系建议”体验，但 P1 不实现。
+
+建议卡片：
+
+```txt
+建议关系
+林青 → 青云宗
+类型：成员
+建议存储：势力成员
+来源：第一章摘要
+证据：林青通过试炼成为青云宗外门弟子
+置信度：86%
+
+[确认] [修改后确认] [忽略]
+```
+
+确认后再写入正式关系表或专用关系表。
+
+### 17.4 AI 写入路径
+
+后续 AI 写入关系应走同一套 Service/API 边界，不能直接写数据库。
+
+必须校验：
+
+```txt
+projectId 边界
+目标实体存在且未软删除
+关系类型是否适用于源/目标类型
+是否命中专用关系表
+是否存在重复关系
+canonStatus 默认 draft
+sourceType/sourceId 可追溯
+```
+
+### 17.5 Context Builder 如何使用关系
+
+关系进入 Context Builder 时，不应全量注入。
+
+应按任务读取：
+
+```txt
+当前 Scene 相关人物关系
+当前地点相关势力/规则关系
+当前 POV 角色的重要关系
+当前章节涉及势力冲突关系
+confirmed 关系优先
+draft 关系默认不进入，除非用户显式选择
+```
+
+Context Builder 需要保留 sourceRefs：
+
+```txt
+Relationship
+FactionMembership
+FactionRelation
+LocationFaction
+LocationRule
+FactionRule
+SpeciesRule
+StoryItemRule
+AbilityRule
+```
+
+### 17.6 与未来时间体系的边界
+
+AI 可能会发现“关系变化”，但 P1 不做关系时间演化。
+
+AI 可以先生成建议说明：
+
+```txt
+林青和沈砚的关系从信任变为怀疑。
+```
+
+但不把它写成正式时间线事件。
+
+关系变化、关系版本、读者/角色知情时间，后续进入独立的 Novel Time System / 状态演化设计。

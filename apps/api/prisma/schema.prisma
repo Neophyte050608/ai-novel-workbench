@@ -147,6 +147,11 @@ model Project {
   storyItemRules      StoryItemRule[]
   abilities           Ability[]
   abilityRules        AbilityRule[]
+  scenes              Scene[]
+  scenePlans          ScenePlan[]
+  sceneVersions       SceneVersion[]
+  sceneSummaries      SceneSummary[]
+  sceneHandoffs       SceneHandoff[]
 
   @@index([status])
   @@index([deletedAt])
@@ -257,6 +262,11 @@ model Chapter {
   locationStates  LocationState[]
   factionStates   FactionState[]
   storyItemStates StoryItemState[]
+  scenes          Scene[]
+  scenePlans      ScenePlan[]
+  sceneVersions   SceneVersion[]
+  sceneSummaries  SceneSummary[]
+  sceneHandoffs   SceneHandoff[]
 
   @@index([projectId, orderIndex])
   @@index([volumeId, orderIndex])
@@ -294,11 +304,183 @@ model ChapterPlan {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chapter Chapter? @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter    Chapter?    @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  scenePlans ScenePlan[]
 
   @@index([projectId, orderIndex])
   @@index([projectId, chapterId])
+  @@index([deletedAt])
+}
+
+model Scene {
+  id                String      @id @default(cuid())
+  projectId         String
+  chapterId         String
+  title             String?
+  goal              String?
+  orderIndex        Int         @default(0)
+  status            String      @default("planned")
+  storyTimeLabel    String?
+  povCharacterId    String?
+  primaryLocationId String?
+  currentPlanId     String?
+  currentVersionId  String?
+  canonStatus       CanonStatus @default(draft)
+  sourceType        String?
+  sourceId          String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter   Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  plans     ScenePlan[]
+  versions  SceneVersion[]
+  summaries SceneSummary[]
+  handoffs  SceneHandoff[]
+
+  @@index([projectId, chapterId, orderIndex])
+  @@index([projectId, status, orderIndex])
+  @@index([projectId, canonStatus])
+  @@index([projectId, povCharacterId])
+  @@index([projectId, primaryLocationId])
+  @@index([deletedAt])
+}
+
+model ScenePlan {
+  id            String      @id @default(cuid())
+  projectId     String
+  chapterId     String
+  sceneId       String
+  chapterPlanId String?
+  title         String?
+  goal          String?
+  outline       String?
+  conflict      String?
+  choice        String?
+  consequence   String?
+  readerPromise String?
+  readerPayoff  String?
+  nextHook      String?
+  constraints   Json?
+  orderIndex    Int         @default(0)
+  canonStatus   CanonStatus @default(draft)
+  sourceType    String?
+  sourceId      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter     Chapter      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  scene       Scene        @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  chapterPlan ChapterPlan? @relation(fields: [chapterPlanId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, sceneId, orderIndex])
+  @@index([projectId, chapterId, orderIndex])
+  @@index([projectId, chapterPlanId])
+  @@index([projectId, canonStatus])
+  @@index([deletedAt])
+}
+
+model SceneVersion {
+  id               String    @id @default(cuid())
+  projectId        String
+  chapterId        String
+  sceneId          String
+  source           String    @default("user")
+  sourceType       String?
+  sourceId         String?
+  content          String
+  wordCount        Int?
+  changeSummary    String?
+  basedOnVersionId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter         Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  scene           Scene          @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  basedOnVersion  SceneVersion?  @relation("SceneVersionHistory", fields: [basedOnVersionId], references: [id], onDelete: SetNull)
+  derivedVersions SceneVersion[] @relation("SceneVersionHistory")
+  summaries       SceneSummary[]
+  handoffs        SceneHandoff[]
+
+  @@index([projectId, sceneId, createdAt])
+  @@index([projectId, chapterId, createdAt])
+  @@index([projectId, source])
+  @@index([basedOnVersionId])
+  @@index([deletedAt])
+}
+
+model SceneSummary {
+  id                String      @id @default(cuid())
+  projectId         String
+  chapterId         String
+  sceneId           String
+  sceneVersionId    String?
+  summary           String
+  keyEvents         Json?
+  characterChanges  Json?
+  locationChanges   Json?
+  factionChanges    Json?
+  worldRuleChanges  Json?
+  newFacts          Json?
+  readerVisibleInfo Json?
+  canonStatus       CanonStatus @default(draft)
+  createdBy         String?
+  sourceType        String?
+  sourceId          String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  deletedAt         DateTime?
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter      Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  scene        Scene         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  sceneVersion SceneVersion? @relation(fields: [sceneVersionId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, sceneId, createdAt])
+  @@index([projectId, chapterId, createdAt])
+  @@index([projectId, canonStatus])
+  @@index([sceneVersionId])
+  @@index([deletedAt])
+}
+
+model SceneHandoff {
+  id             String      @id @default(cuid())
+  projectId      String
+  chapterId      String
+  sceneId        String
+  sceneVersionId String?
+  nextSceneId    String?
+  readerKnows    Json?
+  actualChanges  Json?
+  openQuestions  Json?
+  promisesOpened Json?
+  promisesClosed Json?
+  nextSceneMust  Json?
+  riskNotes      Json?
+  canonStatus    CanonStatus @default(draft)
+  createdBy      String?
+  sourceType     String?
+  sourceId       String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter      Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  scene        Scene         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  sceneVersion SceneVersion? @relation(fields: [sceneVersionId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, sceneId, createdAt])
+  @@index([projectId, chapterId, createdAt])
+  @@index([projectId, nextSceneId])
+  @@index([projectId, canonStatus])
+  @@index([sceneVersionId])
   @@index([deletedAt])
 }
 

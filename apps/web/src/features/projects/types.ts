@@ -45,28 +45,28 @@ export interface Project {
 
 export interface CreateProjectInput {
   title: string;
-  subtitle?: string;
+  subtitle?: string | null;
   status?: string;
   genreIds?: string[];
   primaryGenreId?: string;
   tagIds?: string[];
-  logline?: string;
-  summary?: string;
-  premise?: string;
-  coreIdea?: string;
-  mainPlot?: string;
-  intro?: string;
-  storySeed?: string;
-  worldview?: string;
-  eraBackground?: string;
-  targetLength?: string;
-  estimatedChapters?: number;
-  wordsPerChapter?: number;
-  language?: string;
-  writingStyle?: string;
-  tone?: string;
-  pov?: string;
-  protagonist?: string;
+  logline?: string | null;
+  summary?: string | null;
+  premise?: string | null;
+  coreIdea?: string | null;
+  mainPlot?: string | null;
+  intro?: string | null;
+  storySeed?: string | null;
+  worldview?: string | null;
+  eraBackground?: string | null;
+  targetLength?: string | null;
+  estimatedChapters?: number | null;
+  wordsPerChapter?: number | null;
+  language?: string | null;
+  writingStyle?: string | null;
+  tone?: string | null;
+  pov?: string | null;
+  protagonist?: string | null;
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput>;

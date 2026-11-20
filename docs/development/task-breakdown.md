@@ -470,3 +470,111 @@ P0 运行环境与规范
 | 实体图谱 | P3 | 依赖 Relationship 成熟 |
 | 工作流编辑器 | P3 | 等生成链路稳定后再做 |
 | 导出/归档 | P3 | 数据模型稳定后再做 |
+
+
+---
+
+# P1：Scene / 场景结构模块
+
+## 职责
+
+建立章节内的场景颗粒度，让长篇小说可以按 `Volume / Chapter / Scene` 逐层拆解，并支持写前计划、正文版本、场景摘要、场景交接和轻量写作准备度检查。
+
+Scene 是叙事结构线、故事资产线、读者体验线的交汇点，不是普通章节子表。
+
+## 不负责什么
+
+1. 不做 AI 生成。
+2. 不做模型接入。
+3. 不做复杂 UI。
+4. 不做 Beat 实体。
+5. 不做完整 Memory / Continuity 审稿线。
+6. 不做 Scene 资产关系表 P1 实现。
+7. 不扩展 GenerationTask.sceneId / ContextSnapshot.sceneId。
+8. 不生成 ChapterVersionSceneVersion 装配表。
+
+## 开发规则
+
+1. Scene 必须归属 Chapter，不允许跨 Chapter。
+2. Scene、ScenePlan、SceneVersion、SceneSummary、SceneHandoff 必须保留 project 边界。
+3. 写前计划、正文版本、摘要、交接必须分离。
+4. Scene 正文必须进入 SceneVersion，不得直接覆盖 Scene。
+5. DELETE 默认软删除，重要创作数据不得物理删除。
+6. PATCH 不得深改子实体；activate、reorder、confirm、archive、restore 必须走专门接口。
+7. currentPlanId / currentVersionId P1 可不建 Prisma relation，但 Service 层必须校验同 project/chapter/scene 且未软删除。
+8. SceneSummary / SceneHandoff 的 Json 字段只能保存摘要、提示、快照结构，不能替代 CharacterState、LocationState、FactionState、WorldRule、Fact、MemoryRecord 或核心关系表。
+9. P1 只做 Scene profile 聚合读取和 readiness 轻量检查，不接 ContextSnapshot / GenerationTask / PromptRender。
+10. 新增 schema 前必须先评审 `docs/modules/scenes.md` 与本任务拆分。
+
+## 任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| SCENE-DOC-1 | Scene 模块设计文档 | 已做 | `docs/modules/scenes.md` 存在，明确职责、边界、P1/P2/P3 分期 |
+| SCENE-TASK-1 | Scene 任务拆分 | 已做 | `task-breakdown.md` 包含 Scene 模块职责、规则、任务、验收标准 |
+| SCENE-SCHEMA-1 | P1 schema 与 migration | 已做 | schema 覆盖 Scene / ScenePlan / SceneVersion / SceneSummary / SceneHandoff，并已生成 create-only migration |
+| SCENE-SCHEMA-2 | schema 审查 | 已做 | 已复核 projectId/chapterId/source/canonStatus/deletedAt/index/relation 边界，无阻塞项 |
+| SCENE-API-1 | Scene 基础 API | 待做 | list/create/detail/patch/delete/reorder/confirm/archive/restore 边界清晰 |
+| SCENE-API-2 | ScenePlan API | 待做 | plans list/create/update/delete/activate，activate 校验同 scene 且未软删除 |
+| SCENE-API-3 | SceneVersion API | 待做 | versions list/create/update/delete/activate，正文版本不直接覆盖 Scene |
+| SCENE-API-4 | SceneSummary API | 待做 | summaries CRUD，默认只读未删除记录，confirmed 才进入上下文 |
+| SCENE-API-5 | SceneHandoff API | 待做 | handoffs CRUD，固定七类字段，confirmed 才进入下一场上下文 |
+| SCENE-API-6 | Scene profile/readiness | 待做 | profile 聚合 scene/currentPlan/currentVersion/latestSummary/latestHandoff/pov/location/readiness |
+| SCENE-UI-1 | 章节内 Scene 轻 UI | 待做 | 可查看场景列表与基础详情，不展示未实现 AI 生成按钮 |
+| SCENE-QA-1 | 边界测试 | 待做 | 覆盖 project 边界、软删除、activate、reorder、PATCH 不深改、跨 chapter 拒绝 |
+
+## P2 后置任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| SCENE-P2-1 | SceneCharacter | 后置 | 记录场景参与人物和场景内状态 |
+| SCENE-P2-2 | SceneLocation | 后置 | 支持多地点和地点在场景中的作用 |
+| SCENE-P2-3 | SceneFaction | 后置 | 支持势力参与、影响、读者可见性 |
+| SCENE-P2-4 | SceneWorldRule | 后置 | 支持规则 applies/revealed/violated/foreshadowed/exception |
+| SCENE-P2-5 | ChapterVersionSceneVersion | 后置 | ChapterVersion 可追溯由哪些 SceneVersion 装配 |
+| SCENE-P2-6 | Scene-aware Context Builder | 后置 | ContextSnapshot / GenerationTask 扩展 sceneId 后再接入 |
+
+
+
+---
+
+# P1：Relationships / 关系页重构
+
+## 职责
+
+把人物、地点、势力、物种、世界规则、道具、能力等实体的关系信息从基础信息区中独立出来，形成统一的「关系」页签。
+
+关系页负责展示当前实体与其他实体之间的通用关系和已有专用关系摘要，并提供新增通用关系的产品化入口。
+
+## 不负责什么
+
+1. 不大改 schema。
+2. 不迁移专用关系表。
+3. 不做大型图谱视图。
+4. 不做 AI 自动关系抽取。
+5. 不做关系时间线演化系统。
+6. 不做完整连续性审稿。
+7. P1 不强行在一个表单里编辑所有专用关系。
+
+## 开发规则
+
+1. 关系 Tab 是实体详情的一等页签，不再塞进基础信息底部。
+2. 关系创建必须通过目标类型和目标对象选择，不允许手填数据库 ID。
+3. 关系类型应根据当前实体类型和目标类型动态变化。
+4. generic Relationship 和专用关系表应统一展示，但不强行统一存储。
+5. 专用关系 P1 可以只读展示或跳转原模块编辑。
+6. P1 不做图谱，先做列表和筛选。
+7. P1 不接 AI，不做自动抽取。
+
+## 任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| REL-DOC-1 | 关系页设计文档 | 已做 | `docs/modules/relationships.md` 存在，明确关系 Tab、EntityRelationsPanel、分期和验收标准 |
+| REL-UI-1 | Character 关系 Tab | 待做 | Character 详情中关系独立成 Tab，关系不再挤在基础信息底部 |
+| REL-UI-2 | EntityRelationsPanel | 待做 | 可按 entityType/entityId 展示 generic Relationship 列表 |
+| REL-UI-3 | 目标对象选择器 | 待做 | 新增关系不手填 ID，可按目标类型搜索选择对象 |
+| REL-UI-4 | 动态关系类型 | 待做 | 关系类型随目标类型变化，显示中文产品文案 |
+| REL-UI-5 | 专用关系摘要 | 后置 | FactionMembership / FactionRelation / LocationRule 等可在关系 Tab 中统一展示 |
+| REL-P2-1 | 专用关系创建入口 | 后置 | 从关系 Tab 创建成员关系、势力关系、规则适用等专用关系 |
+| REL-P3-1 | 关系图谱与演化 | 后置 | 局部关系图、时间演化、AI 建议关系后续设计 |
