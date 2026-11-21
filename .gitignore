@@ -11,3 +11,12 @@ apps/api/prisma/migrations/dev.db
 .alma-snapshots
 .local/
 apps/api/.local/
+# Generated architecture diagram working files
+.archify/
+docs/modules/*.browser-check.json
+docs/modules/*.delivery.json
+docs/modules/*.finalize.json
+docs/modules/*.finalize-summary.json
+
+# TypeScript incremental build cache
+*.tsbuildinfo
