@@ -315,8 +315,9 @@ P0 运行环境与规范
 4. 激活版本只更新 `Chapter.currentVersionId`，必须校验版本属于同 project / chapter。
 5. SceneVersion 可按 Scene 顺序装配为 ChapterVersion；P1 不新增 `ChapterVersionSceneVersion` join 表。
 6. 从场景装配时，任一 Scene 缺少当前版本或当前版本软删除，都必须清晰报错。
-7. P1 不考虑多人协作，不做 AI 生成、PromptRender、ContextBuilder、发布平台或富文本编辑器。
-8. ChapterSummary 后续进入小说记忆。
+7. ChapterSummary 是章节级摘要，P1 支持人工维护和从已确认 SceneSummary 汇总；不写入长期 MemoryRecord。
+8. 从场景摘要汇总时，任一 Scene 缺少 confirmed SceneSummary 都必须清晰报错，不使用 draft fallback。
+9. P1 不考虑多人协作，不做 AI 生成、PromptRender、ContextBuilder、MemoryRecord、发布平台或富文本编辑器。
 
 ## 任务
 
@@ -327,8 +328,9 @@ P0 运行环境与规范
 | CHAP-3 | 版本保存 | 已做 | 保存正文创建 ChapterVersion，不直接覆盖 Chapter；支持版本说明 |
 | CHAP-4 | 激活版本 | 已做 | 可将 ChapterVersion 设置为当前版本，后端校验同 project / chapter |
 | CHAP-5 | 从场景装配 | 已做 | 可按 Scene.orderIndex 拼接各 Scene.currentVersionId 对应 SceneVersion.content，生成 ChapterVersion；支持包含场景标题和装配后激活 |
-| CHAP-6 | 章节 profile | 已做 | 提供当前版本、版本列表、字数、场景数量和装配可用性给前端详情区 |
-| CHAP-7 | 章节摘要 | P2 | 保存 ChapterSummary，并进入小说记忆 |
+| CHAP-6 | 章节 profile | 已做 | 提供当前版本、版本列表、字数、场景数量、摘要列表、latestSummary/currentSummary 和装配可用性给前端详情区 |
+| CHAP-7 | 章节摘要 | 已做 | 支持 ChapterSummary 列表、新增、编辑、软删除、确认、归档、恢复；profile 返回 latestSummary/currentSummary；不写 MemoryRecord |
+| CHAP-8 | 从场景摘要汇总 | 已做 | 按 Scene.orderIndex 读取每个未删除 Scene 的 confirmed SceneSummary，组合 summary/keyEvents/characterChanges/newFacts 创建 draft ChapterSummary；缺失 confirmed 时清晰报错；不调用 AI |
 
 ---
 
@@ -450,19 +452,20 @@ P0 运行环境与规范
 
 ## 职责
 
-维护章节摘要、正史事实、角色状态、关系。
+维护长期小说记忆、正史事实、角色状态和关系沉淀。P1 的 ChapterSummary 已在章节模块中完成人工维护与场景摘要汇总；它只是后续记忆沉淀入口，不是长期 MemoryRecord 本体。
 
 ## 开发规则
 
 1. Fact 必须有 canonStatus。
 2. CharacterState 必须能追溯来源。
 3. KnowledgeChunk 只作为 RAG 预留，不在 MVP 依赖。
+4. 从 ChapterSummary / SceneSummary 沉淀长期记忆必须走单独的确认流程，不能在 P1 摘要保存时自动写 MemoryRecord / EvidenceRef。
 
 ## 任务
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| MEM-1 | ChapterSummary | P2 | 章节摘要可保存 |
+| MEM-1 | 摘要到长期记忆沉淀 | P2 | 可从已确认 ChapterSummary/SceneSummary 人工选择并确认写入长期记忆；P1 不自动写入 |
 | MEM-2 | Fact 台账 | P2 | 正史事实可确认 |
 | MEM-3 | CharacterState 历史 | P2 | 角色状态可追踪 |
 | MEM-4 | Relationship | P2 | 关系可建模 |

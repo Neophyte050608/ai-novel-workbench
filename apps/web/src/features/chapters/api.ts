@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../shared/api/client';
-import type { AssembleChapterInput, Chapter, ChapterInput, ChapterProfile, ChapterVersion, ChapterVersionInput } from './types';
+import type { AssembleChapterInput, Chapter, ChapterInput, ChapterProfile, ChapterSummary, ChapterSummaryInput, ChapterVersion, ChapterVersionInput } from './types';
 
 export function listChapters(projectId: string) {
   return apiGet<Chapter[]>(`/projects/${projectId}/chapters`);
@@ -51,4 +51,36 @@ export function assembleChapterFromScenes(projectId: string, chapterId: string, 
 
 export function getChapterProfile(projectId: string, chapterId: string) {
   return apiGet<ChapterProfile>(`/projects/${projectId}/chapters/${chapterId}/profile`);
+}
+
+export function listChapterSummaries(projectId: string, chapterId: string) {
+  return apiGet<ChapterSummary[]>(`/projects/${projectId}/chapters/${chapterId}/summaries`);
+}
+
+export function createChapterSummary(projectId: string, chapterId: string, input: ChapterSummaryInput) {
+  return apiPost<ChapterSummary>(`/projects/${projectId}/chapters/${chapterId}/summaries`, input);
+}
+
+export function updateChapterSummary(projectId: string, summaryId: string, input: ChapterSummaryInput) {
+  return apiPatch<ChapterSummary>(`/projects/${projectId}/chapter-summaries/${summaryId}`, input);
+}
+
+export function deleteChapterSummary(projectId: string, summaryId: string) {
+  return apiDelete<ChapterSummary>(`/projects/${projectId}/chapter-summaries/${summaryId}`);
+}
+
+export function confirmChapterSummary(projectId: string, summaryId: string) {
+  return apiPost<ChapterSummary>(`/projects/${projectId}/chapter-summaries/${summaryId}/confirm`, {});
+}
+
+export function archiveChapterSummary(projectId: string, summaryId: string) {
+  return apiPost<ChapterSummary>(`/projects/${projectId}/chapter-summaries/${summaryId}/archive`, {});
+}
+
+export function restoreChapterSummary(projectId: string, summaryId: string) {
+  return apiPost<ChapterSummary>(`/projects/${projectId}/chapter-summaries/${summaryId}/restore`, {});
+}
+
+export function rollupChapterSummaryFromScenes(projectId: string, chapterId: string) {
+  return apiPost<ChapterSummary>(`/projects/${projectId}/chapters/${chapterId}/summaries/rollup-from-scenes`, {});
 }

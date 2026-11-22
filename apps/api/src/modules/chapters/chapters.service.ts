@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ChapterStatus, ChapterVersionSource } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AssembleChapterFromScenesDto } from './dto/assemble-chapter-from-scenes.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
+import { CreateChapterSummaryDto } from './dto/create-chapter-summary.dto';
 import { CreateChapterVersionDto } from './dto/create-chapter-version.dto';
 import { ReorderChaptersDto } from './dto/reorder-chapters.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
+import { UpdateChapterSummaryDto } from './dto/update-chapter-summary.dto';
 import { UpdateChapterVersionDto } from './dto/update-chapter-version.dto';
 
 const chapterOrderBy = [{ orderIndex: 'asc' as const }, { createdAt: 'asc' as const }];
@@ -14,6 +17,7 @@ const chapterStatuses = new Set<string>(Object.values(ChapterStatus));
 const chapterVersionSources = new Set<string>(Object.values(ChapterVersionSource));
 type ChapterData = CreateChapterDto | UpdateChapterDto;
 type ChapterVersionData = CreateChapterVersionDto | UpdateChapterVersionDto;
+type ChapterSummaryData = CreateChapterSummaryDto | UpdateChapterSummaryDto;
 
 type ChapterBoundary = { id: string; projectId: string; currentVersionId: string | null; deletedAt: Date | null };
 
@@ -206,12 +210,118 @@ export class ChaptersService {
     return version;
   }
 
+  async listSummaries(projectId: string, chapterId: string) {
+    await this.getChapter(projectId, chapterId);
+    return this.prisma.chapterSummary.findMany({ where: { projectId, chapterId, deletedAt: null }, orderBy: latestVersionOrderBy });
+  }
+
+  async getSummary(projectId: string, summaryId: string) {
+    const summary = await this.prisma.chapterSummary.findFirst({ where: { id: summaryId, projectId, deletedAt: null } });
+    if (!summary) throw new NotFoundException(`ChapterSummary ${summaryId} not found in project ${projectId}`);
+    await this.ensureChapterBoundary(projectId, summary.chapterId);
+    return summary;
+  }
+
+  async createSummary(projectId: string, chapterId: string, dto: CreateChapterSummaryDto) {
+    this.validateSummaryBody(dto, false);
+    const chapter = await this.getChapter(projectId, chapterId);
+    await this.ensureVersionBoundary(projectId, chapter.id, dto.chapterVersionId, false, 'chapterVersionId');
+    return this.prisma.chapterSummary.create({
+      data: {
+        ...this.normalizeSummaryData(dto),
+        projectId,
+        chapterId: chapter.id,
+        summary: dto.summary.trim(),
+        canonStatus: 'draft',
+        createdBy: dto.createdBy?.trim() || 'user',
+      },
+    });
+  }
+
+  async updateSummary(projectId: string, summaryId: string, dto: UpdateChapterSummaryDto) {
+    this.validateSummaryBody(dto, true);
+    const summary = await this.getSummary(projectId, summaryId);
+    await this.ensureVersionBoundary(projectId, summary.chapterId, dto.chapterVersionId ?? undefined, false, 'chapterVersionId');
+    const data = this.normalizeSummaryData(dto);
+    assertWritableData(data);
+    return this.prisma.chapterSummary.update({ where: { id: summaryId }, data });
+  }
+
+  async deleteSummary(projectId: string, summaryId: string) {
+    await this.getSummary(projectId, summaryId);
+    return this.prisma.chapterSummary.update({ where: { id: summaryId }, data: { deletedAt: new Date() } });
+  }
+
+  async confirmSummary(projectId: string, summaryId: string) {
+    await this.getSummary(projectId, summaryId);
+    return this.prisma.chapterSummary.update({ where: { id: summaryId }, data: { canonStatus: 'confirmed' } });
+  }
+
+  async archiveSummary(projectId: string, summaryId: string) {
+    await this.getSummary(projectId, summaryId);
+    return this.prisma.chapterSummary.update({ where: { id: summaryId }, data: { canonStatus: 'archived' } });
+  }
+
+  async restoreSummary(projectId: string, summaryId: string) {
+    const summary = await this.prisma.chapterSummary.findFirst({ where: { id: summaryId, projectId } });
+    if (!summary) throw new NotFoundException(`ChapterSummary ${summaryId} not found in project ${projectId}`);
+    await this.ensureChapterBoundary(projectId, summary.chapterId);
+    if (!summary.deletedAt && summary.canonStatus !== 'archived') return summary;
+    return this.prisma.chapterSummary.update({ where: { id: summaryId }, data: { deletedAt: null, canonStatus: 'draft' } });
+  }
+
+  async rollupSummaryFromScenes(projectId: string, chapterId: string) {
+    const chapter = await this.getChapter(projectId, chapterId);
+    const scenes = await this.prisma.scene.findMany({ where: { projectId, chapterId: chapter.id, deletedAt: null }, orderBy: chapterOrderBy });
+    if (scenes.length === 0) throw new BadRequestException('cannot roll up chapter summary without scenes');
+
+    const parts: string[] = [];
+    const keyEvents: Prisma.InputJsonValue[] = [];
+    const characterChanges: Prisma.InputJsonValue[] = [];
+    const newFacts: Prisma.InputJsonValue[] = [];
+    const sourceSummaryIds: string[] = [];
+
+    for (const scene of scenes as SceneForAssembly[]) {
+      const summary = await this.prisma.sceneSummary.findFirst({
+        where: { projectId, chapterId: chapter.id, sceneId: scene.id, canonStatus: 'confirmed', deletedAt: null },
+        orderBy: latestVersionOrderBy,
+      });
+      if (!summary) throw new BadRequestException(`Scene ${this.sceneLabel(scene)} has no confirmed SceneSummary; confirm a scene summary before rolling up`);
+      sourceSummaryIds.push(summary.id);
+      parts.push(`## ${scene.title?.trim() || `场景 ${scene.orderIndex}`}\n${summary.summary.trim()}`);
+      this.appendJsonItems(keyEvents, summary.keyEvents, scene);
+      this.appendJsonItems(characterChanges, summary.characterChanges, scene);
+      this.appendJsonItems(newFacts, summary.newFacts, scene);
+    }
+
+    return this.prisma.chapterSummary.create({
+      data: {
+        projectId,
+        chapterId: chapter.id,
+        chapterVersionId: chapter.currentVersionId,
+        summary: parts.join('\n\n'),
+        keyEvents,
+        characterChanges,
+        newFacts,
+        canonStatus: 'draft',
+        createdBy: 'system',
+        sourceType: 'sceneSummaryRollup',
+        sourceId: sourceSummaryIds.join(','),
+      },
+    });
+  }
+
   async getProfile(projectId: string, chapterId: string) {
     const chapter = await this.getChapter(projectId, chapterId);
-    const [currentVersion, versions, scenes] = await Promise.all([
+    const [currentVersion, versions, scenes, summaries, latestSummary, currentSummary] = await Promise.all([
       chapter.currentVersionId ? this.prisma.chapterVersion.findFirst({ where: { id: chapter.currentVersionId, chapterId: chapter.id } }) : null,
       this.prisma.chapterVersion.findMany({ where: { chapterId: chapter.id }, orderBy: latestVersionOrderBy }),
       this.prisma.scene.findMany({ where: { projectId, chapterId: chapter.id, deletedAt: null }, orderBy: chapterOrderBy }),
+      this.prisma.chapterSummary.findMany({ where: { projectId, chapterId: chapter.id, deletedAt: null }, orderBy: latestVersionOrderBy }),
+      this.prisma.chapterSummary.findFirst({ where: { projectId, chapterId: chapter.id, canonStatus: 'confirmed', deletedAt: null }, orderBy: latestVersionOrderBy }),
+      chapter.currentVersionId
+        ? this.prisma.chapterSummary.findFirst({ where: { projectId, chapterId: chapter.id, chapterVersionId: chapter.currentVersionId, canonStatus: 'confirmed', deletedAt: null }, orderBy: latestVersionOrderBy })
+        : null,
     ]);
 
     return {
@@ -219,10 +329,14 @@ export class ChaptersService {
       currentVersion,
       versions,
       scenes,
+      summaries,
+      latestSummary,
+      currentSummary: currentSummary ?? latestSummary,
       stats: {
         currentWordCount: currentVersion ? this.countWords(currentVersion.content) : 0,
         versionCount: versions.length,
         sceneCount: scenes.length,
+        summaryCount: summaries.length,
       },
       readiness: {
         hasCurrentVersion: Boolean(currentVersion),
@@ -251,11 +365,15 @@ export class ChaptersService {
     if (!volume) throw new BadRequestException('volumeId must belong to the project');
   }
 
-  private async ensureVersionBoundary(projectId: string, chapterId: string, versionId?: string | null) {
-    assertStringField(versionId, 'versionId', true);
+  private async ensureVersionBoundary(projectId: string, chapterId: string, versionId?: string | null, required = true, field = 'versionId') {
+    if (versionId === undefined || versionId === null) {
+      if (required) throw new BadRequestException(`${field} is required`);
+      return;
+    }
+    assertStringField(versionId, field, true);
     await this.ensureChapterBoundary(projectId, chapterId);
-    const version = await this.prisma.chapterVersion.findFirst({ where: { id: versionId!.trim(), chapterId }, select: { id: true } });
-    if (!version) throw new BadRequestException('versionId must belong to the same project and chapter');
+    const version = await this.prisma.chapterVersion.findFirst({ where: { id: versionId.trim(), chapterId }, select: { id: true } });
+    if (!version) throw new BadRequestException(`${field} must belong to the same project and chapter`);
   }
 
   private validateCreateChapter(dto: CreateChapterDto) {
@@ -314,6 +432,34 @@ export class ChaptersService {
       ['source', 'content', 'changeSummary'],
       ['source', 'content', 'changeSummary'],
     );
+  }
+
+  private validateSummaryBody(dto: ChapterSummaryData, requireBody: boolean) {
+    if (requireBody) assertNonEmptyBody(dto);
+    if (dto?.summary === null) throw new BadRequestException('summary cannot be null');
+    assertStringField(dto?.summary, 'summary', !requireBody);
+    assertStringField(dto?.chapterVersionId, 'chapterVersionId');
+    assertStringField(dto?.createdBy, 'createdBy');
+    assertStringField(dto?.sourceType, 'sourceType');
+    assertStringField(dto?.sourceId, 'sourceId');
+  }
+
+  private normalizeSummaryData(data: ChapterSummaryData) {
+    return pickAllowedFields(
+      data as Record<string, unknown>,
+      ['chapterVersionId', 'summary', 'keyEvents', 'characterChanges', 'newFacts', 'createdBy', 'sourceType', 'sourceId'],
+      ['chapterVersionId', 'summary', 'createdBy', 'sourceType', 'sourceId'],
+    );
+  }
+
+  private appendJsonItems(target: Prisma.InputJsonValue[], value: unknown, scene: SceneForAssembly) {
+    if (value === undefined || value === null) return;
+    const source = { sceneId: scene.id, sceneTitle: scene.title, sceneOrderIndex: scene.orderIndex };
+    if (Array.isArray(value)) {
+      for (const item of value) target.push({ ...source, value: item as Prisma.InputJsonValue });
+      return;
+    }
+    target.push({ ...source, value: value as Prisma.InputJsonValue });
   }
 
   private normalizeRequiredId(value: string, field: string) {

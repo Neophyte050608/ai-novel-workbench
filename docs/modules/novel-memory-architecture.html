@@ -5450,16 +5450,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="797.5" y="136" class="t-muted" font-size="8.4" text-anchor="middle">角色/地点/势力/规则等</text>
         </g>
 
-        <g id="node-assetState" data-node-id="assetState" data-node-label="资产状态与关系" tabindex="0" role="button" aria-label="聚焦资产状态与关系，State / Rule / Membership / Relation, 架构组件" aria-pressed="false" data-node-kind="database" data-node-sublabel="State / Rule / Membership / Relation" data-node-context="架构组件">
-          <title>资产状态与关系 · State / Rule / Membership / Relation · 架构组件</title>
+        <g id="node-assetState" data-node-id="assetState" data-node-label="Relationships P1" tabindex="0" role="button" aria-label="聚焦Relationships P1，实体独立关系页签；confirmed 由用户确认，AI 只进入 draft 建议队列, 架构组件" aria-pressed="false" data-node-kind="database" data-node-sublabel="confirmed 手动 / AI draft" data-node-context="架构组件">
+          <title>Relationships P1 · 独立关系页签；AI 建议只进 draft，不能直接写 confirmed · 架构组件</title>
           <rect x="700" y="210" width="205" height="64" rx="8" class="c-mask"/>
           <rect x="700" y="210" width="205" height="64" rx="8" class="c-database" data-animate="node" style="--step:7" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(706 216) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="802.5" y="240" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">资产状态与关系</text>
-        <text data-detail="context" x="802.5" y="256" class="t-muted" font-size="9" text-anchor="middle">State / Rule / Membership / Relation</text>
+          <text data-node-label="" data-detail-anchor="" x="802.5" y="240" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Relationships P1</text>
+        <text data-detail="context" x="802.5" y="256" class="t-muted" font-size="9" text-anchor="middle">confirmed 手动 / AI draft</text>
         </g>
 
         <g id="node-sceneAssetRel" data-node-id="sceneAssetRel" data-node-label="P2 Scene 资产关系" tabindex="0" role="button" aria-label="聚焦P2 Scene 资产关系，人物 / 地点 / 势力 / 规则, 架构组件" aria-pressed="false" data-node-kind="database" data-node-sublabel="人物 / 地点 / 势力 / 规则" data-node-context="架构组件">
@@ -5655,8 +5655,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="context" x="262.5" y="946" class="t-muted" font-size="9" text-anchor="middle">按创作场景检索</text>
         </g>
 
-        <g id="node-boundary" data-node-id="boundary" data-node-label="P1 边界" tabindex="0" role="button" aria-label="聚焦P1 边界，Scene 五核心实体 + Memory 三核心实体；不做模型 / Beat / 复杂 UI, 架构组件" aria-pressed="false" data-node-kind="security" data-node-sublabel="Scene五件套 + Memory三件套" data-node-context="架构组件">
-          <title>P1 边界 · Scene 五件套 + Memory 三件套 · 架构组件</title>
+        <g id="node-boundary" data-node-id="boundary" data-node-label="P1 边界" tabindex="0" role="button" aria-label="聚焦P1 边界，Scene 五核心实体 + Memory 三核心实体 + Relationships 独立页签；不做模型 / Beat / 复杂 UI / 关系时间演化, 架构组件" aria-pressed="false" data-node-kind="security" data-node-sublabel="Scene + Memory + Relationships" data-node-context="架构组件">
+          <title>P1 边界 · Scene 五件套 + Memory 三件套 + Relationships 独立页签 · 架构组件</title>
           <rect x="40" y="610" width="180" height="70" rx="8" class="c-mask"/>
           <rect x="40" y="610" width="180" height="70" rx="8" class="c-security" data-animate="node" style="--step:12" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(46 616) scale(0.6875)">
@@ -5664,7 +5664,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="130" y="643" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">P1 边界</text>
-        <text data-detail="context" x="130" y="659" class="t-muted" font-size="9" text-anchor="middle">Scene五件套 + Memory三件套</text>
+        <text data-detail="context" x="130" y="659" class="t-muted" font-size="8.4" text-anchor="middle">Scene + Memory + Relationships</text>
         </g>
 
         <!-- Connection labels -->
@@ -5692,13 +5692,13 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <rect x="605.8" y="101" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="630" y="111" class="t-edge-default" font-size="8" text-anchor="middle">建立资产</text>
         </g>
-        <g data-detail="context" data-edge-from="assets" data-edge-to="assetState" data-edge-label="状态/规则/关系" data-edge-key="6" data-edge-id="assets-state">
-          <rect x="714.3" y="175" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="752.9" y="185" class="t-edge-default" font-size="8" text-anchor="middle">状态/规则/关系</text>
+        <g data-detail="context" data-edge-from="assets" data-edge-to="assetState" data-edge-label="关系页签" data-edge-key="6" data-edge-id="assets-state">
+          <rect x="724.4" y="175" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="753.4" y="185" class="t-edge-default" font-size="8" text-anchor="middle">关系页签</text>
         </g>
-        <g data-detail="context" data-edge-from="assetState" data-edge-to="sceneAssetRel" data-edge-label="P2 绑定" data-edge-key="7" data-edge-id="asset-scene-rel">
-          <rect x="752.9000000000001" y="295" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="774.7" y="305" class="t-edge-default" font-size="8" text-anchor="middle">P2 绑定</text>
+        <g data-detail="context" data-edge-from="assetState" data-edge-to="sceneAssetRel" data-edge-label="P2 参与绑定" data-edge-key="7" data-edge-id="asset-scene-rel">
+          <rect x="738.5" y="295" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="774.7" y="305" class="t-edge-default" font-size="8" text-anchor="middle">P2 参与绑定</text>
         </g>
         <g data-detail="context" data-edge-from="sceneAssetRel" data-edge-to="scene" data-edge-label="参与场景" data-edge-key="8" data-edge-id="scene-rel-scene">
           <rect x="618.8" y="466" width="48.4" height="14" rx="3" class="c-mask"/>
@@ -5815,7 +5815,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
       </svg>
 
       <section class="architecture-notes" style="margin: 18px 0 4px; padding: 16px 18px; border: 1px solid var(--panel-border); border-radius: 14px; background: var(--panel); color: var(--text); line-height: 1.7; font-size: 13px;">
-        <strong style="display:block; margin-bottom:8px; font-size:14px;">2026-11-20 设计边界补丁</strong>
+        <strong style="display:block; margin-bottom:8px; font-size:14px;">2026-11-22 设计边界补丁</strong>
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
           <div><b>长篇方法论</b>：不是直接生成章节，而是先建立最低故事资产集，再按 Volume / Chapter / Scene 逐层拆解。</div>
           <div><b>Scene</b>：不是 Chapter 子表，而是叙事结构线、故事资产线、读者体验线的交汇点。</div>
@@ -5825,8 +5825,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <div><b>MemoryRecord</b>：P1 字段至少包含 projectId、memoryType、content、summary、canonStatus、confidence、importance、visibility、sourceType/sourceId 与软删除时间。</div>
           <div><b>EvidenceRef</b>：正文证据优先指向 ChapterVersion；保留 quote、locator/paragraphIndex、start/endOffset、confidence，方便追溯。</div>
           <div><b>MemoryRecordEntity</b>：可用多个 nullable FK，但 Service 必须校验恰好一个实体 FK、目标同 project、未软删除，并为各 FK 建索引。</div>
+          <div><b>Relationships P1</b>：关系从实体基础信息拆成独立页签；confirmed 关系只能由用户确认写入。</div>
+          <div><b>AI 关系建议</b>：AI 只能产生 draft / 建议队列，必须保留 sourceType/sourceId、证据与置信度，不能绕过 Service/API 边界。</div>
           <div><b>边界</b>：ChapterVersion 是原始正文材料；Fact 暂作旧事实台账/兼容层；WorldRule 是规则本体，MemoryRecord 记录应用、例外、揭示或修正。</div>
-          <div><b>分期</b>：P1 不做模型接入、Beat、复杂 UI、Scene 资产关系和连续性审稿；P2 再接 Scene-aware Context Builder。</div>
+          <div><b>分期</b>：P1 不做模型接入、Beat、复杂 UI、Scene 资产关系、关系时间演化和连续性审稿；P2 再接 Scene-aware Context Builder。</div>
         </div>
       </section>
       <p class="intent-trace-status no-print" id="intent-trace-status" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -6025,7 +6027,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <ul>
           <li>Scene 保存结构锚点；ScenePlan 保存写前计划；SceneVersion 保存正文版本。</li>
           <li>SceneSummary 回答发生了什么；SceneHandoff 回答下一场必须继承什么。</li>
-          <li>P1 不做 Beat、AI 生成、模型接入、复杂 UI。</li>
+          <li>P1 不做 Beat、AI 生成、模型接入、复杂 UI，也不做关系时间演化。</li>
         </ul>
       </div>
 
@@ -6037,6 +6039,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <ul>
           <li>Character / Location / Faction / Species / WorldRule / StoryItem / Ability 是剧情发动机。</li>
           <li>P1 使用 POV / Primary Location 等轻指针；P2 再加 SceneCharacter / SceneLocation / SceneFaction / SceneWorldRule。</li>
+          <li>Relationships P1 已拆成实体独立页签；confirmed 关系由用户确认，AI 只进入 draft / 建议队列。</li>
           <li>Relationship 只承载弱引用、证据、呼应，不替代核心锚点和高频参与关系。</li>
         </ul>
       </div>

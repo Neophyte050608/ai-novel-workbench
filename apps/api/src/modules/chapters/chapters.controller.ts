@@ -3,9 +3,11 @@ import { ChaptersService } from './chapters.service';
 import { AssembleChapterFromScenesDto } from './dto/assemble-chapter-from-scenes.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { CreateChapterVersionDto } from './dto/create-chapter-version.dto';
+import { CreateChapterSummaryDto } from './dto/create-chapter-summary.dto';
 import { ReorderChaptersDto } from './dto/reorder-chapters.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { UpdateChapterVersionDto } from './dto/update-chapter-version.dto';
+import { UpdateChapterSummaryDto } from './dto/update-chapter-summary.dto';
 
 @Controller('projects/:projectId')
 export class ChaptersController {
@@ -49,6 +51,51 @@ export class ChaptersController {
   @Post('chapters/:chapterId/assemble-from-scenes')
   assembleFromScenes(@Param('projectId') projectId: string, @Param('chapterId') chapterId: string, @Body() dto: AssembleChapterFromScenesDto) {
     return this.chapters.assembleFromScenes(projectId, chapterId, dto);
+  }
+
+  @Get('chapters/:chapterId/summaries')
+  listSummaries(@Param('projectId') projectId: string, @Param('chapterId') chapterId: string) {
+    return this.chapters.listSummaries(projectId, chapterId);
+  }
+
+  @Post('chapters/:chapterId/summaries')
+  createSummary(@Param('projectId') projectId: string, @Param('chapterId') chapterId: string, @Body() dto: CreateChapterSummaryDto) {
+    return this.chapters.createSummary(projectId, chapterId, dto);
+  }
+
+  @Post('chapters/:chapterId/summaries/rollup-from-scenes')
+  rollupSummaryFromScenes(@Param('projectId') projectId: string, @Param('chapterId') chapterId: string) {
+    return this.chapters.rollupSummaryFromScenes(projectId, chapterId);
+  }
+
+  @Get('chapter-summaries/:summaryId')
+  getSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.chapters.getSummary(projectId, summaryId);
+  }
+
+  @Patch('chapter-summaries/:summaryId')
+  updateSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string, @Body() dto: UpdateChapterSummaryDto) {
+    return this.chapters.updateSummary(projectId, summaryId, dto);
+  }
+
+  @Delete('chapter-summaries/:summaryId')
+  deleteSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.chapters.deleteSummary(projectId, summaryId);
+  }
+
+  @Post('chapter-summaries/:summaryId/confirm')
+  confirmSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.chapters.confirmSummary(projectId, summaryId);
+  }
+
+  @Post('chapter-summaries/:summaryId/archive')
+  archiveSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.chapters.archiveSummary(projectId, summaryId);
+  }
+
+  @Post('chapter-summaries/:summaryId/restore')
+  restoreSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.chapters.restoreSummary(projectId, summaryId);
   }
 
   @Get('chapters/:chapterId')

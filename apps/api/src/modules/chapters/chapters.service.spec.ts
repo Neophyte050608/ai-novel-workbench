@@ -13,8 +13,10 @@ function createPrismaStub() {
     { id: 'chapter-2', projectId: 'project-2', title: '他项章节', orderIndex: 0, status: 'draft', currentVersionId: null, deletedAt: null, createdAt: now, updatedAt: now },
   ];
   const chapterVersions: AnyRecord[] = [];
+  const chapterSummaries: AnyRecord[] = [];
   const scenes: AnyRecord[] = [];
   const sceneVersions: AnyRecord[] = [];
+  const sceneSummaries: AnyRecord[] = [];
   let idCounter = 1;
 
   const matches = (row: AnyRecord, where: AnyRecord): boolean =>
@@ -72,12 +74,14 @@ function createPrismaStub() {
     volume: makeModel(volumes, 'volume'),
     chapter: makeModel(chapters, 'chapter'),
     chapterVersion: makeModel(chapterVersions, 'chapter-version'),
+    chapterSummary: makeModel(chapterSummaries, 'chapter-summary'),
     scene: makeModel(scenes, 'scene'),
     sceneVersion: makeModel(sceneVersions, 'scene-version'),
+    sceneSummary: makeModel(sceneSummaries, 'scene-summary'),
     $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
   };
 
-  return { data: { chapters, chapterVersions, scenes, sceneVersions }, prisma };
+  return { data: { chapters, chapterVersions, chapterSummaries, scenes, sceneVersions, sceneSummaries }, prisma };
 }
 
 async function testActivateVersionRequiresSameProjectAndChapter() {
@@ -156,12 +160,87 @@ async function testAssembleReportsMissingOrDeletedSceneVersion() {
   );
 }
 
+async function testSummaryPatchCannotMoveProjectOrChapter() {
+  const { prisma } = createPrismaStub();
+  const service = new ChaptersService(prisma as any);
+  const summary = await service.createSummary('project-1', 'chapter-1', { summary: '初始摘要' });
+
+  const updated = await service.updateSummary('project-1', summary.id, { summary: '更新摘要', projectId: 'project-2', chapterId: 'chapter-2', canonStatus: 'confirmed' } as any);
+
+  assert.equal(updated.summary, '更新摘要');
+  assert.equal(updated.projectId, 'project-1');
+  assert.equal(updated.chapterId, 'chapter-1');
+  assert.equal(updated.canonStatus, 'draft');
+}
+
+async function testSummaryVersionBoundaryAndSoftDelete() {
+  const { data, prisma } = createPrismaStub();
+  const service = new ChaptersService(prisma as any);
+  const ownVersion = await service.createVersion('project-1', 'chapter-1', { content: '正文' });
+  const otherVersion = await service.createVersion('project-2', 'chapter-2', { content: '他项正文' });
+
+  await assert.rejects(
+    () => service.createSummary('project-1', 'chapter-1', { summary: '摘要', chapterVersionId: otherVersion.id }),
+    (error) => error instanceof BadRequestException && /chapterVersionId/.test(error.message),
+  );
+
+  const summary = await service.createSummary('project-1', 'chapter-1', { summary: '摘要', chapterVersionId: ownVersion.id });
+  const deleted = await service.deleteSummary('project-1', summary.id);
+  assert.ok(deleted.deletedAt instanceof Date);
+  assert.equal(data.chapterSummaries.length, 1);
+}
+
+async function testRollupSummaryRequiresConfirmedSceneSummaries() {
+  const { data, prisma } = createPrismaStub();
+  const service = new ChaptersService(prisma as any);
+  data.scenes.push({ id: 'scene-1', projectId: 'project-1', chapterId: 'chapter-1', title: '开场', orderIndex: 0, currentVersionId: null, deletedAt: null, createdAt: new Date() });
+
+  await assert.rejects(
+    () => service.rollupSummaryFromScenes('project-1', 'chapter-1'),
+    (error) => error instanceof BadRequestException && /no confirmed SceneSummary/.test(error.message),
+  );
+}
+
+async function testRollupSummaryCombinesConfirmedSceneSummaries() {
+  const { data, prisma } = createPrismaStub();
+  const service = new ChaptersService(prisma as any);
+  const version = await service.createVersion('project-1', 'chapter-1', { content: '章节正文' });
+  await service.activateVersion('project-1', 'chapter-1', version.id);
+  data.scenes.push(
+    { id: 'scene-1', projectId: 'project-1', chapterId: 'chapter-1', title: '开场', orderIndex: 0, currentVersionId: null, deletedAt: null, createdAt: new Date('2026-01-01') },
+    { id: 'scene-2', projectId: 'project-1', chapterId: 'chapter-1', title: '转折', orderIndex: 1, currentVersionId: null, deletedAt: null, createdAt: new Date('2026-01-02') },
+  );
+  data.sceneSummaries.push(
+    { id: 'summary-1', projectId: 'project-1', chapterId: 'chapter-1', sceneId: 'scene-1', summary: '主角收到密信。', keyEvents: ['收到密信'], characterChanges: [{ name: '主角', change: '决定出发' }], newFacts: null, canonStatus: 'confirmed', deletedAt: null, createdAt: new Date('2026-01-03') },
+    { id: 'summary-2', projectId: 'project-1', chapterId: 'chapter-1', sceneId: 'scene-2', summary: '主角离开故乡。', keyEvents: ['离开故乡'], characterChanges: null, newFacts: ['故乡被监视'], canonStatus: 'confirmed', deletedAt: null, createdAt: new Date('2026-01-04') },
+  );
+
+  const summary = await service.rollupSummaryFromScenes('project-1', 'chapter-1');
+
+  assert.equal(summary.chapterVersionId, version.id);
+  assert.equal(summary.canonStatus, 'draft');
+  assert.equal(summary.createdBy, 'system');
+  assert.equal(summary.sourceType, 'sceneSummaryRollup');
+  assert.equal(summary.sourceId, 'summary-1,summary-2');
+  assert.equal(summary.summary, '## 开场\n主角收到密信。\n\n## 转折\n主角离开故乡。');
+  assert.deepEqual(summary.keyEvents, [
+    { sceneId: 'scene-1', sceneTitle: '开场', sceneOrderIndex: 0, value: '收到密信' },
+    { sceneId: 'scene-2', sceneTitle: '转折', sceneOrderIndex: 1, value: '离开故乡' },
+  ]);
+  assert.deepEqual(summary.characterChanges, [{ sceneId: 'scene-1', sceneTitle: '开场', sceneOrderIndex: 0, value: { name: '主角', change: '决定出发' } }]);
+  assert.deepEqual(summary.newFacts, [{ sceneId: 'scene-2', sceneTitle: '转折', sceneOrderIndex: 1, value: '故乡被监视' }]);
+}
+
 async function run() {
   await testActivateVersionRequiresSameProjectAndChapter();
   await testChapterPatchCannotChangeCurrentVersion();
   await testVersionPatchCannotMoveChapter();
   await testAssembleFromScenesCreatesAndActivatesChapterVersion();
   await testAssembleReportsMissingOrDeletedSceneVersion();
+  await testSummaryPatchCannotMoveProjectOrChapter();
+  await testSummaryVersionBoundaryAndSoftDelete();
+  await testRollupSummaryRequiresConfirmedSceneSummaries();
+  await testRollupSummaryCombinesConfirmedSceneSummaries();
   console.log('chapters.service.spec.ts passed');
 }
 

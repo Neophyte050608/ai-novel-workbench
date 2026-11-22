@@ -152,6 +152,7 @@ model Project {
   sceneVersions       SceneVersion[]
   sceneSummaries      SceneSummary[]
   sceneHandoffs       SceneHandoff[]
+  chapterSummaries    ChapterSummary[]
 
   @@index([status])
   @@index([deletedAt])
@@ -495,7 +496,7 @@ model SceneHandoff {
 }
 
 model ChapterSummary {
-  id               String   @id @default(cuid())
+  id               String      @id @default(cuid())
   projectId        String
   chapterId        String
   chapterVersionId String?
@@ -503,14 +504,22 @@ model ChapterSummary {
   keyEvents        Json?
   characterChanges Json?
   newFacts         Json?
-  createdBy        String? // user | ai | system
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  canonStatus      CanonStatus @default(draft)
+  createdBy        String? // user | system
+  sourceType       String?
+  sourceId         String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  deletedAt        DateTime?
 
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   chapter        Chapter         @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   chapterVersion ChapterVersion? @relation(fields: [chapterVersionId], references: [id], onDelete: SetNull)
 
   @@index([projectId, chapterId, createdAt])
+  @@index([projectId, canonStatus])
+  @@index([chapterVersionId])
+  @@index([deletedAt])
 }
 
 model Character {
