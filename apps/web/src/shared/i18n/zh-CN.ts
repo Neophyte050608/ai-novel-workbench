@@ -74,6 +74,7 @@ export const zhCN = {
       currentNovel: '当前小说',
       nav: {
         info: '小说信息',
+        planning: '规划',
         chapters: '章节',
         scenes: '场景',
         characters: '人物',

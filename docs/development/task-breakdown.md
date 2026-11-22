@@ -274,22 +274,30 @@ P0 运行环境与规范
 
 ## 职责
 
-管理分卷和章节计划。
+管理分卷 / 故事单元和轻量章节计划。P1 中 `Volume` 即 StoryUnit，不新增 `VolumePlan` 或平行故事单元表。
 
 ## 开发规则
 
 1. `Volume` 和 `ChapterPlan` 不得混进 Chapter 正文。
-2. 生成章节前应优先读取 ChapterPlan。
-3. MVP 先做 Volume + ChapterPlan，不急着做 Arc/Scene。
+2. `ChapterPlan` 只保留轻量计划字段：标题、目标、大纲、POV、约束、排序、状态、正史状态和来源追溯。
+3. 生成章节前应优先读取已确认 ChapterPlan；但 P1 不实现 Context Builder。
+4. MVP 先做 Volume + ChapterPlan，不做 Arc、Timeline、VolumePlan、AI 生成或复杂拖拽树。
+5. PATCH 必须使用 allow-list，不允许写入 `projectId`、`chapterId`、`canonStatus`、`deletedAt` 等受控字段。
+6. Service 层必须校验 project 边界、volumeId 同 project、chapterId 同 project、volume/chapter 一致性和软删除过滤。
 
 ## 任务
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| PLAN-1 | 分卷列表 | 待做 | 可创建/排序 Volume |
-| PLAN-2 | 章节计划列表 | 待做 | ChapterPlan 可归属 Project/Chapter |
-| PLAN-3 | 计划详情编辑 | 待做 | goal/outline/pov/constraints 可编辑 |
-| PLAN-4 | 从计划创建章节 | 待做 | Chapter 与 ChapterPlan 建立关系 |
+| PLAN-DOC-1 | Planning P1 文档收口 | 已做 | `docs/modules/planning.md` 明确 Volume=StoryUnit、ChapterPlan 轻量计划、P1/P2/P3 边界 |
+| PLAN-SCHEMA-1 | ChapterPlan P1 字段与索引 | 已做 | ChapterPlan 增加 volumeId/status/canonStatus/sourceType/sourceId，Volume 增加 chapterPlans，未新增 VolumePlan |
+| PLAN-MIGRATION-1 | Prisma migration 与说明 | 已做 | 生成 `add_planning_p1_fields` migration，并新增 `docs/database/migrations/0010-add-planning-p1-fields.md` |
+| PLAN-API-1 | Volume 基础 API | 已做 | 支持 list/create/detail/patch/delete/reorder，按 project 和软删除边界过滤 |
+| PLAN-API-2 | ChapterPlan 基础 API | 已做 | 支持 list/create/detail/patch/delete/confirm/archive/restore，PATCH 使用 allow-list |
+| PLAN-API-3 | 从计划创建章节 | 已做 | `POST /projects/:projectId/chapter-plans/:planId/create-chapter` 创建 Chapter 并回填 ChapterPlan.chapterId |
+| PLAN-UI-1 | 工作台规划模块 | 已做 | 工作台新增“规划”模块，左侧分卷/故事单元、中间章节计划、右侧计划详情/编辑 |
+| PLAN-UI-2 | 人工维护闭环 | 已做 | 可创建/编辑/删除分卷；可创建/编辑/删除/确认/归档/恢复计划；可从计划创建正式章节 |
+| PLAN-QA-1 | 自检与越界审查 | 已做 | 已跑 prisma format/validate/db:generate、api typecheck、web typecheck/build；确认未做 AI、Timeline、VolumePlan、Context Builder、PromptRender/GenerationTask 扩展 |
 
 ---
 

@@ -21,6 +21,7 @@ import { StatusTag, statusLabel, statusOptions, statusColor } from '../../shared
 import { listChapters } from '../chapters/api';
 import type { Chapter } from '../chapters/types';
 import { ChapterWorkspace } from '../chapters/ChapterWorkspace';
+import { PlanningWorkspace } from '../planning/PlanningWorkspace';
 import { SceneWorkspace } from '../scenes/SceneWorkspace';
 import {
   createAbility,
@@ -181,7 +182,7 @@ import type {
 
 const { Title, Text, Paragraph } = Typography;
 type ViewMode = 'shelf' | 'manual-create' | 'workspace';
-type WorkspaceSection = 'info' | 'chapters' | 'scenes' | 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'assets';
+type WorkspaceSection = 'info' | 'planning' | 'chapters' | 'scenes' | 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'assets';
 type FormApi = Parameters<NonNullable<React.ComponentProps<typeof Form>['getFormApi']>>[0];
 type ModuleKind = 'characters' | 'locations' | 'factions' | 'species' | 'rules' | 'worldItems' | 'storyItems' | 'abilities';
 type RelationshipTargetType = Exclude<RelationshipEntityType, 'chapter' | 'chapter_plan'>;
@@ -207,7 +208,7 @@ type SubResourceKind = 'characterStates' | 'characterIdentities' | 'locationStat
 type SubResourceRecord = { id: string; title: string; meta?: string | null; summary?: string | null; updatedAt?: string; fields: Record<string, unknown> };
 type SubResourceConfig = { kind: SubResourceKind; title: string; addLabel: string; parentIdName: string; titleField: string; metaFields: string[]; fields: DetailField[]; requiredFields?: string[]; booleanFields?: string[]; numberFields?: string[]; longFields?: string[]; defaults?: Record<string, unknown> };
 
-const workspaceSections: WorkspaceSection[] = ['info', 'chapters', 'scenes', 'characters', 'locations', 'factions', 'species', 'rules', 'worldItems', 'assets'];
+const workspaceSections: WorkspaceSection[] = ['info', 'planning', 'chapters', 'scenes', 'characters', 'locations', 'factions', 'species', 'rules', 'worldItems', 'assets'];
 const localEntityIdPrefixes = ['local-', 'sample-', 'placeholder-', 'example-'] as const;
 const worldItemTypeOptions = [
   { value: 'system', label: '体系' },
@@ -1415,7 +1416,7 @@ function Workspace({ project, activeSection, onSectionChange, onBack, onProjectU
           </Space>
         </aside>
         <main style={{ padding: 24 }}>
-          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'chapters' ? <ChapterWorkspace projectId={project.id} /> : activeSection === 'scenes' ? <SceneWorkspace projectId={project.id} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
+          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'planning' ? <PlanningWorkspace projectId={project.id} /> : activeSection === 'chapters' ? <ChapterWorkspace projectId={project.id} /> : activeSection === 'scenes' ? <SceneWorkspace projectId={project.id} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
         </main>
       </div>
     </Card>

@@ -230,8 +230,9 @@ model Volume {
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
 
-  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chapters Chapter[]
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapters     Chapter[]
+  chapterPlans ChapterPlan[]
 
   @@index([projectId, orderIndex])
   @@index([deletedAt])
@@ -291,25 +292,34 @@ model ChapterVersion {
 }
 
 model ChapterPlan {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   projectId   String
+  volumeId    String?
   chapterId   String?
   title       String?
   goal        String?
   outline     String?
   pov         String?
   constraints Json?
-  orderIndex  Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  orderIndex  Int         @default(0)
+  status      String      @default("planned")
+  canonStatus CanonStatus @default(draft)
+  sourceType  String?
+  sourceId    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
 
   project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  volume     Volume?     @relation(fields: [volumeId], references: [id], onDelete: SetNull)
   chapter    Chapter?    @relation(fields: [chapterId], references: [id], onDelete: SetNull)
   scenePlans ScenePlan[]
 
+  @@index([projectId, volumeId, orderIndex])
   @@index([projectId, orderIndex])
   @@index([projectId, chapterId])
+  @@index([projectId, status])
+  @@index([projectId, canonStatus])
   @@index([deletedAt])
 }
 
