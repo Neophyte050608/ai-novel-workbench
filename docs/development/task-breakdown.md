@@ -305,24 +305,30 @@ P0 运行环境与规范
 
 ## 职责
 
-管理章节正文、版本历史和当前版本。
+管理章节元信息、读者最终看到的一章完整正文、版本历史和当前版本指针。Chapter 是发布/阅读单位，Scene 是内部创作颗粒度。
 
 ## 开发规则
 
-1. AI 生成结果必须进入 ChapterVersion。
-2. 不得直接覆盖 Chapter 正文。
-3. 手动编辑也应形成版本或明确保存策略。
-4. ChapterSummary 后续进入小说记忆。
+1. Chapter 是章节元信息和发布单位，不得直接覆盖 Chapter 正文。
+2. 完整章节正文必须保存为 ChapterVersion。
+3. 手动编辑正文必须创建新 ChapterVersion，可选择同时激活为当前版本。
+4. 激活版本只更新 `Chapter.currentVersionId`，必须校验版本属于同 project / chapter。
+5. SceneVersion 可按 Scene 顺序装配为 ChapterVersion；P1 不新增 `ChapterVersionSceneVersion` join 表。
+6. 从场景装配时，任一 Scene 缺少当前版本或当前版本软删除，都必须清晰报错。
+7. P1 不考虑多人协作，不做 AI 生成、PromptRender、ContextBuilder、发布平台或富文本编辑器。
+8. ChapterSummary 后续进入小说记忆。
 
 ## 任务
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| CHAP-1 | 章节列表 | 待做 | 按项目展示章节 |
-| CHAP-2 | 章节编辑器 | 待做 | 可编辑正文 |
-| CHAP-3 | 版本保存 | 待做 | 保存生成 ChapterVersion |
-| CHAP-4 | 激活版本 | 待做 | 可设置当前版本 |
-| CHAP-5 | 章节摘要 | P2 | 保存 ChapterSummary |
+| CHAP-1 | 章节列表 | 已做 | 工作台按项目展示章节，保留新增/编辑/删除章节元信息能力 |
+| CHAP-2 | 章节正文编辑 | 已做 | 章节详情提供正文 textarea，可编辑读者最终看到的完整章节正文；不使用富文本 |
+| CHAP-3 | 版本保存 | 已做 | 保存正文创建 ChapterVersion，不直接覆盖 Chapter；支持版本说明 |
+| CHAP-4 | 激活版本 | 已做 | 可将 ChapterVersion 设置为当前版本，后端校验同 project / chapter |
+| CHAP-5 | 从场景装配 | 已做 | 可按 Scene.orderIndex 拼接各 Scene.currentVersionId 对应 SceneVersion.content，生成 ChapterVersion；支持包含场景标题和装配后激活 |
+| CHAP-6 | 章节 profile | 已做 | 提供当前版本、版本列表、字数、场景数量和装配可用性给前端详情区 |
+| CHAP-7 | 章节摘要 | P2 | 保存 ChapterSummary，并进入小说记忆 |
 
 ---
 
