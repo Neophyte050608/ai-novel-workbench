@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -17,6 +17,8 @@ import {
 import { IllustrationNoContent, IllustrationNoContentDark } from '@douyinfe/semi-illustrations';
 import { IconArrowLeft, IconDelete, IconEdit, IconFile, IconPlus, IconSearch } from '@douyinfe/semi-icons';
 import { t } from '../../shared/i18n';
+import { useUnsavedChangesGuard } from '../../shared/hooks/useUnsavedChangesGuard';
+import { readEntityModuleState, readInitialNovelLocation, resetToShelf, updateNovelLocation, writeEntityModuleState } from '../../shared/navigation/workspaceLocation';
 import { StatusTag, statusLabel, statusOptions, statusColor } from '../../shared/ui/StatusTag';
 import { listChapters } from '../chapters/api';
 import type { Chapter } from '../chapters/types';
@@ -1242,21 +1244,39 @@ function parseTags(value: unknown) {
 }
 
 export function ProjectList() {
+  const initialLocation = useMemo(() => readInitialNovelLocation(), []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [genres, setGenres] = useState<TaxonomyItem[]>([]);
   const [tags, setTags] = useState<TaxonomyItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => initialLocation.projectId);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('shelf');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => initialLocation.view ?? (initialLocation.projectId ? 'workspace' : 'shelf'));
   const [creating, setCreating] = useState(false);
-  const [activeSection, setActiveSection] = useState<WorkspaceSection>('info');
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>(() => initialLocation.section ?? 'info');
   const [formApi, setFormApi] = useState<FormApi>();
+  const handlingPopState = useRef(false);
+
+  useEffect(() => {
+    function handlePopState() {
+      handlingPopState.current = true;
+      const next = readInitialNovelLocation();
+      setSelectedId(next.projectId);
+      setViewMode(next.view ?? (next.projectId ? 'workspace' : 'shelf'));
+      setActiveSection(next.section ?? 'info');
+      window.setTimeout(() => { handlingPopState.current = false; }, 0);
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   async function refresh(nextSelectedId?: string) {
     const response = await listProjects();
     const data = projectArray(response);
     setProjects(data);
-    setSelectedId((current) => nextSelectedId ?? current ?? data[0]?.id);
+    setSelectedId((current) => {
+      const desired = nextSelectedId ?? current;
+      return desired && data.some((project) => project.id === desired) ? desired : data[0]?.id;
+    });
   }
 
   useEffect(() => {
@@ -1274,6 +1294,43 @@ export function ProjectList() {
     [projects, selectedId],
   );
 
+  useEffect(() => {
+    if (handlingPopState.current) return;
+    const activeProjectId = selectedProject?.id ?? selectedId;
+    updateNovelLocation({
+      app: 'shelf',
+      view: viewMode,
+      projectId: activeProjectId,
+      section: viewMode === 'workspace' ? activeSection : undefined,
+      chapterId: viewMode === 'workspace' && activeSection === 'chapters' ? undefined : undefined,
+      chapterTab: viewMode === 'workspace' && activeSection === 'chapters' ? undefined : undefined,
+      sceneId: viewMode === 'workspace' && (activeSection === 'chapters' || activeSection === 'scenes') ? undefined : undefined,
+      sceneTab: viewMode === 'workspace' && activeSection === 'chapters' ? undefined : undefined,
+      volumeId: viewMode === 'workspace' && activeSection === 'planning' ? undefined : undefined,
+      planId: viewMode === 'workspace' && activeSection === 'planning' ? undefined : undefined,
+      includeArchived: viewMode === 'workspace' && activeSection === 'planning' ? undefined : undefined,
+    });
+  }, [activeSection, selectedId, selectedProject?.id, viewMode]);
+
+  function handleSectionChange(section: WorkspaceSection, patch: WorkspaceJumpPatch = {}) {
+    if (!selectedProject) return;
+    setActiveSection(section);
+    setViewMode('workspace');
+    updateNovelLocation({ app: 'shelf', view: 'workspace', projectId: selectedProject.id, section, ...patch }, { history: 'push' });
+  }
+
+  function handleBackToShelf() {
+    setViewMode('shelf');
+    resetToShelf(selectedProject?.id ?? selectedId);
+  }
+
+  function handleEnterWorkspace(section: WorkspaceSection = 'info') {
+    if (!selectedProject) return;
+    setActiveSection(section);
+    setViewMode('workspace');
+    updateNovelLocation({ app: 'shelf', view: 'workspace', projectId: selectedProject.id, section }, { history: 'push' });
+  }
+
   async function handleCreate(selection?: Pick<CreateProjectInput, 'genreIds' | 'tagIds'>) {
     if (!formApi) return;
     const values = { ...(await formApi.validate() as CreateProjectInput & { idea?: string }), ...selection };
@@ -1285,6 +1342,7 @@ export function ProjectList() {
       await refresh(created.id);
       setActiveSection('info');
       setViewMode('workspace');
+      updateNovelLocation({ app: 'shelf', view: 'workspace', projectId: created.id, section: 'info' });
     } catch (error) {
       Notification.error({ title: t('messages.createFailed'), content: String((error as Error).message ?? error) });
     } finally {
@@ -1305,6 +1363,7 @@ export function ProjectList() {
       const next = projects.find((project) => project.id !== id)?.id;
       await refresh(next);
       setViewMode('shelf');
+      resetToShelf(next);
     } catch (error) {
       Notification.error({ title: t('messages.deleteFailed'), content: String((error as Error).message ?? error) });
     }
@@ -1313,15 +1372,15 @@ export function ProjectList() {
   if (viewMode === 'workspace') {
     return (
       <div style={{ minHeight: 'calc(100vh - 84px)' }}>
-        <Workspace project={selectedProject} activeSection={activeSection} onSectionChange={setActiveSection} onBack={() => setViewMode('shelf')} onProjectUpdate={handleProjectUpdate} onDelete={handleDelete} />
+        <Workspace project={selectedProject} activeSection={activeSection} onSectionChange={handleSectionChange} onBack={handleBackToShelf} onProjectUpdate={handleProjectUpdate} onDelete={handleDelete} />
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '280px minmax(0, 1fr)', gap: 16, minHeight: 'calc(100vh - 84px)' }}>
-      <aside style={{ background: 'var(--semi-color-bg-0)', border: '1px solid var(--semi-color-border)', borderRadius: 12, padding: 12 }}>
-        <Button block theme="solid" type="primary" icon={<IconPlus />} onClick={() => setViewMode('manual-create')}>
+    <div className="project-shelf-layout">
+      <aside className="project-shelf-sidebar">
+        <Button block theme="solid" type="primary" icon={<IconPlus />} onClick={() => { setViewMode('manual-create'); updateNovelLocation({ app: 'shelf', view: 'manual-create', projectId: selectedProject?.id ?? selectedId, section: undefined }); }}>
           {t('actions.create')}
         </Button>
         <Text type="tertiary" style={{ display: 'block', margin: '12px 0 8px' }}>{t('projects.count', { count: projects.length })}</Text>
@@ -1333,7 +1392,7 @@ export function ProjectList() {
               const genre = primaryGenre(project);
               const active = project.id === selectedProject?.id;
               return (
-                <button key={project.id} type="button" onClick={() => { setSelectedId(project.id); setViewMode('shelf'); }} style={{ display: 'flex', width: '100%', gap: 10, padding: 10, textAlign: 'left', background: active ? 'var(--semi-color-primary-light-default)' : 'transparent', border: `1px solid ${active ? 'var(--semi-color-primary-light-active)' : 'transparent'}`, borderRadius: 10, cursor: 'pointer' }}>
+                <button key={project.id} type="button" onClick={() => { setSelectedId(project.id); setViewMode('shelf'); resetToShelf(project.id); }} style={{ display: 'flex', width: '100%', gap: 10, padding: 10, textAlign: 'left', background: active ? 'var(--semi-color-primary-light-default)' : 'transparent', border: `1px solid ${active ? 'var(--semi-color-primary-light-active)' : 'transparent'}`, borderRadius: 10, cursor: 'pointer' }}>
                   <div style={{ width: 42, height: 52, borderRadius: 8, border: '1px solid var(--semi-color-border)', background: 'var(--semi-color-fill-0)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}><IconFile /></div>
                   <div style={{ minWidth: 0 }}>
                     <Text strong ellipsis={{ showTooltip: true }} style={{ display: 'block' }}>{project.title}</Text>
@@ -1346,8 +1405,8 @@ export function ProjectList() {
         )}
       </aside>
       <main>
-        {viewMode === 'manual-create' && <ManualCreate genres={genres} tags={tags} setFormApi={setFormApi} creating={creating} onBack={() => setViewMode('shelf')} onCreate={handleCreate} />}
-        {viewMode === 'shelf' && <ShelfDetail project={selectedProject} onEnter={() => { setActiveSection('info'); selectedProject && setViewMode('workspace'); }} onDelete={handleDelete} />}
+        {viewMode === 'manual-create' && <ManualCreate genres={genres} tags={tags} setFormApi={setFormApi} creating={creating} onBack={handleBackToShelf} onCreate={handleCreate} />}
+        {viewMode === 'shelf' && <ShelfDetail project={selectedProject} onEnter={() => handleEnterWorkspace('info')} onDelete={handleDelete} />}
       </main>
     </div>
   );
@@ -1398,10 +1457,12 @@ function ShelfDetail({ project, onEnter, onDelete }: { project?: Project; onEnte
   return <Card style={{ minHeight: 'calc(100vh - 84px)', borderRadius: 12 }} bodyStyle={{ padding: 24 }}><ProjectHeader project={project} action={<Button theme="solid" type="primary" onClick={onEnter}>{t('projects.detail.enterWorkspace')}</Button>} onDelete={onDelete} /><ProjectShelfSummary project={project} genre={genre} /></Card>;
 }
 
-function Workspace({ project, activeSection, onSectionChange, onBack, onProjectUpdate, onDelete }: { project?: Project; activeSection: WorkspaceSection; onSectionChange: (section: WorkspaceSection) => void; onBack: () => void; onProjectUpdate: (projectId: string, input: UpdateProjectInput) => Promise<void>; onDelete: (id: string) => void }) {
+type WorkspaceJumpPatch = { chapterId?: string; sceneId?: string; chapterTab?: 'flow' | 'body' | 'summaries' | 'versions' | 'overview'; sceneTab?: 'plan' | 'version' | 'summary' | 'handoff' };
+
+function Workspace({ project, activeSection, onSectionChange, onBack, onProjectUpdate, onDelete }: { project?: Project; activeSection: WorkspaceSection; onSectionChange: (section: WorkspaceSection, patch?: WorkspaceJumpPatch) => void; onBack: () => void; onProjectUpdate: (projectId: string, input: UpdateProjectInput) => Promise<void>; onDelete: (id: string) => void }) {
   if (!project) return <ShelfDetail project={project} onEnter={() => undefined} onDelete={onDelete} />;
   return (
-    <Card style={{ minHeight: 'calc(100vh - 84px)', borderRadius: 12 }} bodyStyle={{ padding: 0 }}>
+    <Card className="project-workspace-card" bodyStyle={{ padding: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 20px', borderBottom: '1px solid var(--semi-color-border)' }}>
         <div>
           <Text type="tertiary">{t('projects.workspace.currentNovel')}</Text>
@@ -1409,14 +1470,14 @@ function Workspace({ project, activeSection, onSectionChange, onBack, onProjectU
         </div>
         <Button icon={<IconArrowLeft />} onClick={onBack}>{t('projects.workspace.back')}</Button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0,1fr)', minHeight: 'calc(100vh - 153px)' }}>
-        <aside style={{ borderRight: '1px solid var(--semi-color-border)', padding: 16 }}>
-          <Space vertical align="start" spacing={4} style={{ width: '100%' }}>
+      <div className="project-workspace-body">
+        <aside className="project-workspace-nav">
+          <Space vertical align="start" spacing={4} className="project-workspace-nav__items">
             {workspaceSections.map((key) => <Button key={key} block theme={activeSection === key ? 'light' : 'borderless'} onClick={() => onSectionChange(key)}>{t(`projects.workspace.nav.${key}`)}</Button>)}
           </Space>
         </aside>
-        <main style={{ padding: 24 }}>
-          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'planning' ? <PlanningWorkspace projectId={project.id} /> : activeSection === 'chapters' ? <ChapterWorkspace projectId={project.id} /> : activeSection === 'scenes' ? <SceneWorkspace projectId={project.id} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
+        <main className="project-workspace-content">
+          {activeSection === 'info' ? <ProjectInfoPanel project={project} onSave={(input) => onProjectUpdate(project.id, input)} onDelete={onDelete} /> : activeSection === 'planning' ? <PlanningWorkspace projectId={project.id} /> : activeSection === 'chapters' ? <ChapterWorkspace projectId={project.id} /> : activeSection === 'scenes' ? <SceneWorkspace projectId={project.id} onOpenChapter={(chapterId, sceneId) => onSectionChange('chapters', { chapterId, sceneId, chapterTab: 'flow', sceneTab: 'version' })} /> : activeSection === 'assets' ? <AssetsModule projectId={project.id} /> : <EntityModule key={`${project.id}:${activeSection}`} projectId={project.id} config={moduleConfigs[activeSection]} />}
         </main>
       </div>
     </Card>
@@ -1441,6 +1502,11 @@ function ProjectInfoPanel({ project, onSave, onDelete }: { project: Project; onS
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formApi, setFormApi] = useState<FormApi>();
+  const unsavedGuard = useUnsavedChangesGuard();
+
+  function cancelEdit() {
+    unsavedGuard.guard('project-info', () => setEditing(false));
+  }
 
   async function handleSave() {
     if (!formApi) return;
@@ -1457,6 +1523,7 @@ function ProjectInfoPanel({ project, onSave, onDelete }: { project: Project; onS
     setSaving(true);
     try {
       await onSave(input as UpdateProjectInput);
+      unsavedGuard.resetDirty('project-info');
       setEditing(false);
     } catch (error) {
       Notification.error({ title: t('messages.updateFailed'), content: String((error as Error).message ?? error) });
@@ -1465,8 +1532,8 @@ function ProjectInfoPanel({ project, onSave, onDelete }: { project: Project; onS
     }
   }
 
-  return <ModuleShell title={t('projects.workspace.nav.info')} description={t('projects.workspace.info.description')} action={!editing ? <Space><Button icon={<IconEdit />} onClick={() => setEditing(true)}>{t('actions.edit')}</Button><Popconfirm title={t('projects.detail.deleteTitle')} content={t('projects.detail.deleteContent')} onConfirm={() => onDelete(project.id)}><Button icon={<IconDelete />} type="danger" theme="borderless">{t('actions.delete')}</Button></Popconfirm></Space> : <Space><Button onClick={() => setEditing(false)}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></Space>}>
-    {editing ? <Form key={project.id} initValues={project} getFormApi={setFormApi} labelPosition="top"><GroupedForm groups={projectInfoGroups} longFields={projectLongFields} /></Form> : <GroupedDetails groups={projectInfoGroups} values={project as unknown as Record<string, unknown>} />}
+  return <ModuleShell title={t('projects.workspace.nav.info')} description={t('projects.workspace.info.description')} action={!editing ? <Space><Button icon={<IconEdit />} onClick={() => setEditing(true)}>{t('actions.edit')}</Button><Popconfirm title={t('projects.detail.deleteTitle')} content={t('projects.detail.deleteContent')} onConfirm={() => onDelete(project.id)}><Button icon={<IconDelete />} type="danger" theme="borderless">{t('actions.delete')}</Button></Popconfirm></Space> : <Space><Button onClick={cancelEdit}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></Space>}>
+    {editing ? <Form key={project.id} initValues={project} getFormApi={setFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('project-info')}><GroupedForm groups={projectInfoGroups} longFields={projectLongFields} /></Form> : <GroupedDetails groups={projectInfoGroups} values={project as unknown as Record<string, unknown>} />}
   </ModuleShell>;
 }
 
@@ -1602,16 +1669,18 @@ function AssetsModule({ projectId }: { projectId: string }) {
 }
 
 function EntityModule({ projectId, config }: { projectId: string; config: ModuleConfig }) {
+  const initialEntityState = useMemo(() => readEntityModuleState(projectId, config.kind), [config.kind, projectId]);
   const [records, setRecords] = useState<EntityRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<string>();
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<FilterState>({});
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => initialEntityState.selectedId);
+  const [query, setQuery] = useState(() => initialEntityState.query ?? '');
+  const [filter, setFilter] = useState<FilterState>(() => initialEntityState.filter ?? {});
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formApi, setFormApi] = useState<FormApi>();
   const [loadError, setLoadError] = useState<string>();
-  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
+  const [detailTab, setDetailTab] = useState<DetailTab>(() => initialEntityState.detailTab ?? 'overview');
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const loadRecords = useCallback(async (preferredId?: string) => {
     setLoading(true);
@@ -1632,15 +1701,19 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
 
   useEffect(() => {
     let cancelled = false;
+    const storedEntityState = readEntityModuleState(projectId, config.kind);
     setEditing(false);
-    setSelectedId(undefined);
+    setSelectedId(storedEntityState.selectedId);
+    setQuery(storedEntityState.query ?? '');
+    setFilter(storedEntityState.filter ?? {});
+    setDetailTab(storedEntityState.detailTab ?? 'overview');
     setLoadError(undefined);
     setLoading(true);
     loadEntityRecords(projectId, config.kind)
       .then((next) => {
         if (cancelled) return;
         setRecords(next);
-        setSelectedId(next[0]?.id);
+        setSelectedId((current) => current && next.some((item) => item.id === current) ? current : next[0]?.id);
       })
       .catch((error) => {
         if (cancelled) return;
@@ -1674,6 +1747,10 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
     };
   }, [config.kind, projectId, selectedId]);
 
+  useEffect(() => {
+    writeEntityModuleState(projectId, config.kind, { selectedId, query, filter, detailTab });
+  }, [config.kind, detailTab, filter, projectId, query, selectedId]);
+
   const selected = selectedId ? records.find((recordItem) => recordItem.id === selectedId) : undefined;
   const typeOptions = [...new Set(records.map((recordItem) => recordItem.type).filter(Boolean))] as string[];
   const statusOptions = uniqueStatusFilterOptions(records.map((recordItem) => recordItem.fields.status ?? recordItem.status));
@@ -1703,27 +1780,36 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
   }
 
   function handleAdd() {
-    const fresh = draftRecord(config);
-    setRecords((current) => [fresh, ...current.filter((item) => isPersistedEntityId(item.id))]);
-    setSelectedId(fresh.id);
-    setDetailTab('overview');
-    setEditing(true);
+    unsavedGuard.guard('entity-detail', () => {
+      const fresh = draftRecord(config);
+      setRecords((current) => [fresh, ...current.filter((item) => isPersistedEntityId(item.id))]);
+      setSelectedId(fresh.id);
+      setDetailTab('overview');
+      setEditing(true);
+    });
   }
 
-  function handleCancelEdit() {
+  function discardEdit() {
     if (selected && !isPersistedEntityId(selected.id)) {
       const nextRecords = records.filter((item) => item.id !== selected.id);
       setRecords(nextRecords);
       setSelectedId(nextRecords[0]?.id);
     }
+    unsavedGuard.resetDirty('entity-detail');
     setEditing(false);
   }
 
+  function handleCancelEdit() {
+    unsavedGuard.guard('entity-detail', discardEdit);
+  }
+
   function handleSelectRecord(recordId: string) {
-    setRecords((current) => current.filter((item) => isPersistedEntityId(item.id) || item.id === recordId));
-    setSelectedId(recordId);
-    setDetailTab('overview');
-    setEditing(false);
+    if (!unsavedGuard.guard('entity-detail', () => {
+      setRecords((current) => current.filter((item) => isPersistedEntityId(item.id) || item.id === recordId));
+      setSelectedId(recordId);
+      setDetailTab('overview');
+      setEditing(false);
+    })) return;
   }
 
   async function handleSave() {
@@ -1737,6 +1823,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
       setDetailTab('overview');
       loadRecords(saved.id).catch((error) => Notification.error({ title: t('messages.loadFailed'), content: String((error as Error).message ?? error) }));
       Notification.success({ title: t('messages.saveSuccess') });
+      unsavedGuard.resetDirty('entity-detail');
       setEditing(false);
     } catch (error) {
       Notification.error({ title: t('messages.updateFailed'), content: String((error as Error).message ?? error) });
@@ -1786,7 +1873,7 @@ function EntityModule({ projectId, config }: { projectId: string; config: Module
             </div>
             {editing ? <Space><Button onClick={handleCancelEdit}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></Space> : <Space><Button icon={<IconEdit />} onClick={() => setEditing(true)}>{t('actions.edit')}</Button><Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={handleDelete}><Button icon={<IconDelete />} type="danger" theme="borderless">{t('actions.delete')}</Button></Popconfirm></Space>}
           </div>
-          {editing ? <Form key={selected.id} initValues={selected.fields} getFormApi={setFormApi} labelPosition="top"><GroupedForm groups={editGroups} nameLabel={config.nameLabel} namePlaceholder={config.namePlaceholder} /></Form> : <>
+          {editing ? <Form key={selected.id} initValues={selected.fields} getFormApi={setFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('entity-detail')}><GroupedForm groups={editGroups} nameLabel={config.nameLabel} namePlaceholder={config.namePlaceholder} /></Form> : <>
             <Space spacing={8} style={{ marginBottom: 16 }}>
               <Button size="small" theme={detailTab === 'overview' ? 'solid' : 'light'} type={detailTab === 'overview' ? 'primary' : 'tertiary'} onClick={() => setDetailTab('overview')}>概览</Button>
               <Button size="small" theme={detailTab === 'relations' ? 'solid' : 'light'} type={detailTab === 'relations' ? 'primary' : 'tertiary'} onClick={() => setDetailTab('relations')}>关系</Button>
@@ -1823,6 +1910,7 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
   const [editingItem, setEditingItem] = useState<SubResourceRecord>();
   const [formApi, setFormApi] = useState<FormApi>();
   const [lookupOptions, setLookupOptions] = useState<Record<string, SelectOption[]>>({});
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const refresh = useCallback(async () => {
     if (!isPersistedEntityId(parentId)) {
@@ -1868,6 +1956,14 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
   }
 
   function closeSheet() {
+    unsavedGuard.guard(config.kind, () => {
+      setSheetVisible(false);
+      setEditingItem(undefined);
+    });
+  }
+
+  function closeSheetAfterSave() {
+    unsavedGuard.resetDirty(config.kind);
     setSheetVisible(false);
     setEditingItem(undefined);
   }
@@ -1880,7 +1976,7 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
       const saved = await saveSubResource(projectId, parentId, config, editingItem, values);
       setItems((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
       Notification.success({ title: t('messages.saveSuccess') });
-      closeSheet();
+      closeSheetAfterSave();
       refresh();
     } catch (error) {
       Notification.error({ title: t('messages.updateFailed'), content: String((error as Error).message ?? error) });
@@ -1915,13 +2011,13 @@ function SubResourceSection({ projectId, parentId, config }: { projectId: string
           {item.summary ? <Paragraph ellipsis={{ rows: 2, showTooltip: true }} style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{item.summary}</Paragraph> : null}
         </div>
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" onClick={() => openEdit(item)} />
-          <Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={() => handleDelete(item)}><Button icon={<IconDelete />} type="danger" theme="borderless" /></Popconfirm>
+          <Button icon={<IconEdit />} theme="borderless" aria-label={`编辑${config.title} ${displayLookupValue(config.titleField, item.title, lookupOptions)}`} onClick={() => openEdit(item)} />
+          <Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={() => handleDelete(item)}><Button icon={<IconDelete />} type="danger" theme="borderless" aria-label={`删除${config.title} ${displayLookupValue(config.titleField, item.title, lookupOptions)}`} /></Popconfirm>
         </Space>
       </div>)}
     </div>}
     <SideSheet title={editingItem?.id.startsWith('local-') ? config.addLabel : `编辑${config.title}`} visible={sheetVisible} onCancel={closeSheet} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={closeSheet}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} onClick={handleSave}>{t('actions.save')}</Button></div>}>
-      {editingItem ? <Form key={editingItem.id} initValues={editingItem.fields} getFormApi={setFormApi} labelPosition="top"><SubResourceForm config={config} lookupOptions={lookupOptions} /></Form> : null}
+      {editingItem ? <Form key={editingItem.id} initValues={editingItem.fields} getFormApi={setFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty(config.kind)}><SubResourceForm config={config} lookupOptions={lookupOptions} /></Form> : null}
     </SideSheet>
   </section>;
 }
@@ -1984,6 +2080,7 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
   const [sheetVisible, setSheetVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const refreshRelationships = useCallback(async () => {
     if (!isPersistedEntityId(entityId)) {
@@ -2045,7 +2142,7 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
   const groupedRows = groupByType ? groupRowsByType(filteredRows) : [['全部关系', filteredRows] as const];
   const selectedDedicatedRoute = dedicatedRelationshipRouteFor(entityType, targetType);
   const dedicatedRouteMessage = selectedDedicatedRoute ? dedicatedRelationshipRouteMessage(selectedDedicatedRoute) : '';
-  const saveRelationshipDisabled = !targetId || Boolean(selectedDedicatedRoute);
+  const saveRelationshipDisabled = !targetId || !relationType.trim() || Boolean(selectedDedicatedRoute);
   const currentCount = relationships.filter((relationship) => relationship.isCurrent).length;
   const draftCount = relationships.filter((relationship) => relationship.canonStatus === 'draft').length;
   const confirmedCount = relationships.filter((relationship) => relationship.canonStatus === 'confirmed').length;
@@ -2066,6 +2163,20 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
     setCanonStatus('draft');
     setDirection('from_current');
     setStrength(50);
+  }
+
+  function openCreateSheet() {
+    resetCreateForm();
+    unsavedGuard.resetDirty('relationship');
+    setSheetVisible(true);
+  }
+
+  function closeCreateSheet() {
+    unsavedGuard.guard('relationship', () => setSheetVisible(false));
+  }
+
+  function markRelationshipDirty() {
+    unsavedGuard.markDirty('relationship');
   }
 
   async function handleCreateRelationship() {
@@ -2102,6 +2213,7 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
       }
       await createRelationship(projectId, input);
       resetCreateForm();
+      unsavedGuard.resetDirty('relationship');
       setSheetVisible(false);
       await refreshRelationships();
       Notification.success({ title: t('messages.saveSuccess') });
@@ -2128,7 +2240,7 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
         <Title heading={5} style={{ margin: 0 }}>关系</Title>
         <Text type="tertiary" size="small">{entityName} 的通用关系列表；成员、规则、势力等专用关系在下方对应面板管理。</Text>
       </div>
-      <Button size="small" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setSheetVisible(true)}>新增关系</Button>
+      <Button size="small" theme="solid" type="primary" icon={<IconPlus />} onClick={openCreateSheet}>新增关系</Button>
     </div>
 
     <Card style={{ borderRadius: 12, marginBottom: 12 }} bodyStyle={{ padding: 12 }}>
@@ -2180,22 +2292,22 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
             {row.description ? <Paragraph ellipsis={{ rows: 2, showTooltip: true }} style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap' }}>{row.description}</Paragraph> : null}
           </div>
           <Popconfirm title={t('modules.deleteTitle')} content={t('modules.deleteContent')} onConfirm={() => handleDeleteRelationship(row.relationship.id)}>
-            <Button icon={<IconDelete />} type="danger" theme="borderless" />
+            <Button icon={<IconDelete />} type="danger" theme="borderless" aria-label={`删除关系 ${row.otherName}`} />
           </Popconfirm>
         </div>)}
       </div> : null)}
     </div>}
 
-    <SideSheet title="新增通用关系" visible={sheetVisible} onCancel={() => setSheetVisible(false)} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => setSheetVisible(false)}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} disabled={saveRelationshipDisabled} onClick={handleCreateRelationship}>{t('actions.save')}</Button></div>}>
+    <SideSheet title="新增通用关系" visible={sheetVisible} onCancel={closeCreateSheet} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={closeCreateSheet}>{t('actions.cancel')}</Button><Button theme="solid" type="primary" loading={saving} disabled={saveRelationshipDisabled} title={saveRelationshipDisabled ? (selectedDedicatedRoute ? dedicatedRouteMessage : '请先选择目标对象和关系类型') : undefined} onClick={handleCreateRelationship}>{t('actions.save')}</Button></div>}>
       <Space vertical align="start" spacing={14} style={{ width: '100%' }}>
         <Text type="tertiary">当前实体：{entityName} · {entityTypeLabel(entityType)}</Text>
-        <Select value={targetType} onChange={(value) => handleTargetTypeChange(value as RelationshipTargetType)} style={{ width: '100%' }}>
+        <Select value={targetType} onChange={(value) => { markRelationshipDirty(); handleTargetTypeChange(value as RelationshipTargetType); }} style={{ width: '100%' }}>
           {relationshipTargetTypes.map((type) => <Select.Option key={type.value} value={type.value}>{type.label}</Select.Option>)}
         </Select>
-        <Select value={targetId} placeholder="选择目标对象" onChange={(value) => setTargetId(value as string)} filter style={{ width: '100%' }}>
+        <Select value={targetId} placeholder="选择目标对象" onChange={(value) => { markRelationshipDirty(); setTargetId(value as string); }} filter style={{ width: '100%' }}>
           {selectableTargets.map((option) => <Select.Option key={`${option.type}:${option.id}`} value={option.id}>{option.label}{option.summary ? ` · ${option.summary}` : ''}</Select.Option>)}
         </Select>
-        <Select value={direction} onChange={(value) => setDirection(value as RelationshipDirectionInput)} style={{ width: '100%' }}>
+        <Select value={direction} onChange={(value) => { markRelationshipDirty(); setDirection(value as RelationshipDirectionInput); }} style={{ width: '100%' }}>
           <Select.Option value="from_current">{entityName} → 目标</Select.Option>
           <Select.Option value="to_current">目标 → {entityName}</Select.Option>
           <Select.Option value="bidirectional">双向</Select.Option>
@@ -2204,19 +2316,19 @@ function EntityRelationsPanel({ projectId, entityType, entityId, entityName }: {
           <Text strong style={{ display: 'block', marginBottom: 4 }}>请改用专用关系面板</Text>
           <Text size="small">{dedicatedRouteMessage}</Text>
         </Card> : null}
-        <Select value={relationType} onChange={(value) => setRelationType(value as string)} placeholder="关系类型" style={{ width: '100%' }}>
+        <Select value={relationType} onChange={(value) => { markRelationshipDirty(); setRelationType(value as string); }} placeholder="关系类型" style={{ width: '100%' }}>
           {targetRelationTypes.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}
         </Select>
         <div style={{ width: '100%' }}>
           <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 6 }}>强度：{strength}</Text>
-          <Input value={String(strength)} onChange={(value) => setStrength(Math.max(0, Math.min(100, Number(value) || 0)))} placeholder="0-100" />
+          <Input value={String(strength)} onChange={(value) => { markRelationshipDirty(); setStrength(Math.max(0, Math.min(100, Number(value) || 0))); }} placeholder="0-100" />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, width: '100%' }}>
-          <Input value={startsAt} onChange={setStartsAt} placeholder="开始阶段 / 章节（可选）" />
-          <Input value={endsAt} onChange={setEndsAt} placeholder="结束阶段 / 章节（可选）" />
+          <Input value={startsAt} onChange={(value) => { markRelationshipDirty(); setStartsAt(value); }} placeholder="开始阶段 / 章节（可选）" />
+          <Input value={endsAt} onChange={(value) => { markRelationshipDirty(); setEndsAt(value); }} placeholder="结束阶段 / 章节（可选）" />
         </div>
-        <Input value={description} onChange={setDescription} placeholder="说明：这段关系为什么重要？" style={{ width: '100%' }} />
-        <Select value={canonStatus} onChange={(value) => setCanonStatus(value as string)} style={{ width: '100%' }}>
+        <Input value={description} onChange={(value) => { markRelationshipDirty(); setDescription(value); }} placeholder="说明：这段关系为什么重要？" style={{ width: '100%' }} />
+        <Select value={canonStatus} onChange={(value) => { markRelationshipDirty(); setCanonStatus(value as string); }} style={{ width: '100%' }}>
           <Select.Option value="draft">草稿</Select.Option>
           <Select.Option value="confirmed">已确认</Select.Option>
           <Select.Option value="archived">已归档</Select.Option>

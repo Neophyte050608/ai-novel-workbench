@@ -165,8 +165,8 @@ export function LlmProviderSettings() {
       <div style={{ display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', gap: 16 }}>
         <Card style={{ borderRadius: 12, minHeight: 'calc(100vh - 84px)' }} bodyStyle={{ padding: 16 }}>
           <Title heading={5} style={{ marginTop: 0 }}>提供商</Title>
-          <button
-            type="button"
+          <div
+            aria-current="true"
             style={{
               width: '100%',
               display: 'flex',
@@ -177,12 +177,12 @@ export function LlmProviderSettings() {
               border: '1px solid var(--semi-color-primary)',
               background: 'var(--semi-color-primary-light-default)',
               color: 'var(--semi-color-text-0)',
-              cursor: 'default',
+              boxSizing: 'border-box',
             }}
           >
             <Text strong>Magpie</Text>
             {isConfigured ? <Tag color="green">已启用</Tag> : <Tag>待配置</Tag>}
-          </button>
+          </div>
           <Paragraph type="tertiary" style={{ marginTop: 12 }}>
             第一版仅开放 Magpie。其它模型供应商会在后续接入。
           </Paragraph>
@@ -205,7 +205,7 @@ export function LlmProviderSettings() {
           <div style={{ marginTop: 24, display: 'grid', gap: 18, maxWidth: 760 }}>
             <section>
               <Text strong>API 代理端点</Text>
-              <Input value={baseUrl} onChange={setBaseUrl} style={{ marginTop: 8 }} placeholder={DEFAULT_BASE_URL} />
+              <Input value={baseUrl} onChange={setBaseUrl} style={{ marginTop: 8 }} placeholder={DEFAULT_BASE_URL} aria-label="API 代理端点" />
               <Text type="tertiary" size="small" style={{ display: 'block', marginTop: 6 }}>
                 第一版仅允许本机 Magpie 地址，例如 http://127.0.0.1:3425/v1。
               </Text>
@@ -219,6 +219,7 @@ export function LlmProviderSettings() {
                 onChange={setGatewayKey}
                 style={{ marginTop: 8 }}
                 placeholder={magpieProvider?.hasGatewayKey ? '已保存；留空表示不修改' : DEFAULT_GATEWAY_KEY}
+                aria-label="Gateway Key"
               />
               <Text type="tertiary" size="small" style={{ display: 'block', marginTop: 6 }}>
                 本机连接可使用默认标识；保存后不会再次显示原文。
@@ -237,6 +238,7 @@ export function LlmProviderSettings() {
                 filter
                 style={{ width: '100%', marginTop: 8 }}
                 emptyContent="暂无模型，请先刷新模型列表"
+                aria-label="Magpie 模型"
               >
                 {models.map((item) => <Select.Option key={item.id} value={item.id}>{item.id}</Select.Option>)}
                 {model && !models.some((item) => item.id === model) ? <Select.Option value={model}>{model}</Select.Option> : null}
@@ -249,7 +251,7 @@ export function LlmProviderSettings() {
             <section>
               <Text strong>高级设置</Text>
               <div style={{ marginTop: 8, maxWidth: 240 }}>
-                <Input value={timeoutMs} onChange={setTimeoutMs} suffix="ms" />
+                <Input value={timeoutMs} onChange={setTimeoutMs} suffix="ms" aria-label="请求超时时间" />
               </div>
               <Text type="tertiary" size="small" style={{ display: 'block', marginTop: 6 }}>请求超时时间。</Text>
             </section>

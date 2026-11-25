@@ -15,6 +15,8 @@ import {
 } from '@douyinfe/semi-ui';
 import { IllustrationNoContent, IllustrationNoContentDark } from '@douyinfe/semi-illustrations';
 import { IconDelete, IconEdit, IconPlus } from '@douyinfe/semi-icons';
+import { useUnsavedChangesGuard } from '../../shared/hooks/useUnsavedChangesGuard';
+import { readInitialNovelLocation, updateNovelLocation } from '../../shared/navigation/workspaceLocation';
 import { StatusTag, statusLabel, statusOptions } from '../../shared/ui/StatusTag';
 import { listChapters } from '../chapters/api';
 import type { Chapter } from '../chapters/types';
@@ -187,15 +189,17 @@ const childConfigs: Record<SceneChildKind, SceneChildConfig> = {
   },
 };
 
-export function SceneWorkspace({ projectId }: { projectId: string }) {
+export function SceneWorkspace({ projectId, onOpenChapter }: { projectId: string; onOpenChapter?: (chapterId: string, sceneId?: string) => void }) {
+  const initialLocation = useMemo(() => readInitialNovelLocation(), []);
+  const initialMatchesProject = initialLocation.projectId === projectId;
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [chaptersLoaded, setChaptersLoaded] = useState(false);
-  const [appliedChapterId, setAppliedChapterId] = useState('');
+  const [appliedChapterId, setAppliedChapterId] = useState(() => initialMatchesProject ? initialLocation.chapterId ?? '' : '');
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => initialMatchesProject ? initialLocation.sceneId : undefined);
   const [profile, setProfile] = useState<SceneProfile>();
   const [loading, setLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -204,9 +208,10 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
   const [formApi, setFormApi] = useState<FormApi>();
   const scenesRequestSeq = useRef(0);
   const profileRequestSeq = useRef(0);
-  const appliedChapterIdRef = useRef('');
-  const selectedIdRef = useRef<string>();
+  const appliedChapterIdRef = useRef(initialMatchesProject ? initialLocation.chapterId ?? '' : '');
+  const selectedIdRef = useRef<string | undefined>(initialMatchesProject ? initialLocation.sceneId : undefined);
   const profileRef = useRef<SceneProfile>();
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const setSelectedSceneId = useCallback((id?: string) => {
     if (selectedIdRef.current !== id) {
@@ -251,6 +256,17 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
       setChaptersLoading(false);
     }
   }, [projectId, setCurrentProfile, setSelectedSceneId]);
+
+  useEffect(() => {
+    updateNovelLocation({
+      app: 'shelf',
+      view: 'workspace',
+      projectId,
+      section: 'scenes',
+      chapterId: appliedChapterId || undefined,
+      sceneId: selectedId,
+    });
+  }, [appliedChapterId, projectId, selectedId]);
 
   useEffect(() => {
     refreshChapters();
@@ -383,6 +399,7 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
         ? await createScene(projectId, editingScene.chapterId, input)
         : await updateScene(projectId, editingScene.scene.id, input);
       Notification.success({ title: '场景已保存' });
+      unsavedGuard.resetDirty('scene');
       setEditingScene(undefined);
       await refreshScenes(saved.id);
     } catch (error) {
@@ -409,6 +426,7 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
         <Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>跨章节检索与批量维护场景；日常写作请从“章节写作”进入，在章节上下文内完成场景写作闭环。</Text>
       </div>
       <Space>
+        <Button onClick={() => onOpenChapter?.(appliedChapterId, selectedId)} disabled={!appliedChapterId}>去章节写作继续写本章</Button>
         <Button theme="solid" type="primary" icon={<IconPlus />} onClick={openCreateScene} disabled={!appliedChapterId}>新增场景</Button>
       </Space>
     </section>
@@ -457,8 +475,8 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
       </Card>
     </div>
 
-    <SideSheet title={editingScene?.mode === 'create' ? '新增场景' : '编辑场景'} visible={Boolean(editingScene)} onCancel={() => setEditingScene(undefined)} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => setEditingScene(undefined)}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveScene}>保存</Button></div>}>
-      {editingScene ? <Form key={editingScene.mode === 'create' ? `new:${editingScene.chapterId}` : editingScene.scene.id} initValues={editingScene.mode === 'create' ? { status: 'planned', orderIndex: nextSceneOrderIndex(scenes) } : editingScene.scene} getFormApi={setFormApi} labelPosition="top"><SceneFieldsForm fields={sceneFields} requiredFields={[]} jsonFields={[]} lookupOptions={sceneLookupOptions} /></Form> : null}
+    <SideSheet title={editingScene?.mode === 'create' ? '新增场景' : '编辑场景'} visible={Boolean(editingScene)} onCancel={() => unsavedGuard.guard('scene', () => setEditingScene(undefined))} width={560} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => unsavedGuard.guard('scene', () => setEditingScene(undefined))}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveScene}>保存</Button></div>}>
+      {editingScene ? <Form key={editingScene.mode === 'create' ? `new:${editingScene.chapterId}` : editingScene.scene.id} initValues={editingScene.mode === 'create' ? { status: 'planned', orderIndex: nextSceneOrderIndex(scenes) } : editingScene.scene} getFormApi={setFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('scene')}><SceneFieldsForm fields={sceneFields} requiredFields={[]} jsonFields={[]} lookupOptions={sceneLookupOptions} /></Form> : null}
     </SideSheet>
   </div>;
 }
@@ -496,7 +514,9 @@ function SceneChildSection({ projectId, sceneId, scenes, config, profile, onChan
   const [editingItem, setEditingItem] = useState<EditingChildState>();
   const [changedFields, setChangedFields] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<{ title: string; message: string }>();
   const [formApi, setFormApi] = useState<FormApi>();
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const activeId = config.kind === 'plans' ? profile?.scene.currentPlanId : config.kind === 'versions' ? profile?.scene.currentVersionId : undefined;
   const childLookupOptions = useMemo<Record<string, SelectOption[]>>(() => {
@@ -556,15 +576,20 @@ function SceneChildSection({ projectId, sceneId, scenes, config, profile, onChan
       return;
     }
     setSaving(true);
+    setSaveError(undefined);
     try {
       await saveChild(projectId, editingItem.sceneId, config.kind, editingItem.item, input);
       Notification.success({ title: `${config.title} 已保存` });
+      unsavedGuard.resetDirty(config.kind);
       setEditingItem(undefined);
       setChangedFields(new Set());
       await refresh();
       onChanged();
     } catch (error) {
-      Notification.error({ title: `${config.title} 保存失败`, content: String((error as Error).message ?? error) });
+      const message = String((error as Error).message ?? error);
+      const title = `${config.title} 保存失败`;
+      setSaveError({ title, message });
+      Notification.error({ title, content: message });
     } finally {
       setSaving(false);
     }
@@ -595,7 +620,7 @@ function SceneChildSection({ projectId, sceneId, scenes, config, profile, onChan
   return <section style={{ width: '100%', padding: '2px 0 14px', borderBottom: '1px solid var(--semi-color-border)' }}>
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
       <Title heading={5} style={{ margin: 0 }}>{config.title}</Title>
-      <Button size="small" theme="light" type="primary" icon={<IconPlus />} onClick={() => { setChangedFields(new Set()); setEditingItem({ item: { id: `local-${Date.now()}`, fields: { ...(config.defaults ?? {}) } }, projectId, sceneId, kind: config.kind }); }}>{config.addLabel}</Button>
+      <Button size="small" theme="light" type="primary" icon={<IconPlus />} onClick={() => { setSaveError(undefined); setChangedFields(new Set()); setEditingItem({ item: { id: `local-${Date.now()}`, fields: { ...(config.defaults ?? {}) } }, projectId, sceneId, kind: config.kind }); }}>{config.addLabel}</Button>
     </div>
     {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={3} />} loading /> : items.length === 0 ? <Text type="tertiary">暂无 {config.title}</Text> : <div style={{ display: 'grid', gap: 10 }}>
       {items.map((item) => <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 12, alignItems: 'start', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 10, background: 'var(--semi-color-bg-0)' }}>
@@ -610,13 +635,19 @@ function SceneChildSection({ projectId, sceneId, scenes, config, profile, onChan
         </div>
         <Space>
           {config.canActivate ? <Button size="small" theme={activeId === item.id ? 'solid' : 'light'} type="primary" onClick={() => activateItem(item)} disabled={activeId === item.id}>设为当前</Button> : null}
-          <Button icon={<IconEdit />} theme="borderless" onClick={() => { setChangedFields(new Set()); setEditingItem({ item, projectId, sceneId, kind: config.kind }); }} />
-          <Popconfirm title={`确认删除${config.title}？`} content="删除后会从当前场景移除。" onConfirm={() => deleteItem(item)}><Button icon={<IconDelete />} type="danger" theme="borderless" /></Popconfirm>
+          <Button icon={<IconEdit />} theme="borderless" aria-label={`编辑${config.title} ${config.getTitle(item)}`} onClick={() => { setSaveError(undefined); setChangedFields(new Set()); setEditingItem({ item, projectId, sceneId, kind: config.kind }); }} />
+          <Popconfirm title={`确认删除${config.title}？`} content="删除后会从当前场景移除。" onConfirm={() => deleteItem(item)}><Button icon={<IconDelete />} type="danger" theme="borderless" aria-label={`删除${config.title} ${config.getTitle(item)}`} /></Popconfirm>
         </Space>
       </div>)}
     </div>}
-    <SideSheet title={editingItem && isDraft(editingItem.item) ? config.addLabel : `编辑 ${config.title}`} visible={Boolean(editingItem)} onCancel={() => { setEditingItem(undefined); setChangedFields(new Set()); }} width={childSheetWidth(config.kind)} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => { setEditingItem(undefined); setChangedFields(new Set()); }}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveItem}>保存</Button></div>}>
-      {editingItem ? <Form key={editingItem.item.id} initValues={formValues(isDraft(editingItem.item) ? editingItem.item.fields : editingItem.item, config)} getFormApi={setFormApi} labelPosition="top" onValueChange={(_, changedValue) => setChangedFields((current) => new Set([...current, ...Object.keys(changedValue)]))}><SceneFieldsForm fields={config.fields} requiredFields={config.requiredFields ?? []} jsonFields={config.jsonFields ?? []} lookupOptions={childLookupOptions} /></Form> : null}
+    <SideSheet title={editingItem && isDraft(editingItem.item) ? config.addLabel : `编辑 ${config.title}`} visible={Boolean(editingItem)} onCancel={() => unsavedGuard.guard(config.kind, () => { setEditingItem(undefined); setChangedFields(new Set()); })} width={childSheetWidth(config.kind)} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => unsavedGuard.guard(config.kind, () => { setEditingItem(undefined); setChangedFields(new Set()); })}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveItem}>保存</Button></div>}>
+      {editingItem ? <>
+        {saveError ? <div role="alert" style={{ marginBottom: 12, padding: 12, border: '1px solid var(--semi-color-danger)', borderRadius: 10, background: 'var(--semi-color-danger-light-default)' }}>
+          <Text strong type="danger">{saveError.title}</Text>
+          <Paragraph style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{saveError.message}</Paragraph>
+        </div> : null}
+        <Form key={editingItem.item.id} initValues={formValues(isDraft(editingItem.item) ? editingItem.item.fields : editingItem.item, config)} getFormApi={setFormApi} labelPosition="top" onValueChange={(_, changedValue) => { setSaveError(undefined); unsavedGuard.markDirty(config.kind); setChangedFields((current) => new Set([...current, ...Object.keys(changedValue)])); }}><SceneFieldsForm fields={config.fields} requiredFields={config.requiredFields ?? []} jsonFields={config.jsonFields ?? []} lookupOptions={childLookupOptions} /></Form>
+      </> : null}
     </SideSheet>
   </section>;
 }

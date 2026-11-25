@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Form, Notification, Popconfirm, Select, SideSheet, Skeleton, Space, Switch, Tag, Typography } from '@douyinfe/semi-ui';
 import { IllustrationNoContent, IllustrationNoContentDark } from '@douyinfe/semi-illustrations';
 import { IconDelete, IconEdit, IconPlus } from '@douyinfe/semi-icons';
+import { useUnsavedChangesGuard } from '../../shared/hooks/useUnsavedChangesGuard';
+import { readInitialNovelLocation, updateNovelLocation } from '../../shared/navigation/workspaceLocation';
 import { StatusTag, statusLabel, statusOptions } from '../../shared/ui/StatusTag';
 import { createChapterFromPlan, createChapterPlan, createVolume, deleteChapterPlan, deleteVolume, listChapterPlans, listVolumes, updateChapterPlan, updateVolume, confirmChapterPlan, archiveChapterPlan, restoreChapterPlan } from './api';
 import type { ChapterPlan, ChapterPlanInput, Volume, VolumeInput } from './types';
@@ -15,11 +17,13 @@ const planStatusOptions = statusOptions(['planned', 'confirmed', 'archived'] as 
 const noVolumeId = '__NO_VOLUME__';
 
 export function PlanningWorkspace({ projectId }: { projectId: string }) {
+  const initialLocation = useMemo(() => readInitialNovelLocation(), []);
+  const initialMatchesProject = initialLocation.projectId === projectId;
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [plans, setPlans] = useState<ChapterPlan[]>([]);
-  const [selectedVolumeId, setSelectedVolumeId] = useState<string>(noVolumeId);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>();
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const [selectedVolumeId, setSelectedVolumeId] = useState<string>(() => initialMatchesProject ? initialLocation.volumeId ?? noVolumeId : noVolumeId);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>(() => initialMatchesProject ? initialLocation.planId : undefined);
+  const [includeArchived, setIncludeArchived] = useState(() => initialMatchesProject ? initialLocation.includeArchived ?? false : false);
   const [loading, setLoading] = useState(true);
   const [plansLoading, setPlansLoading] = useState(false);
   const [editingVolume, setEditingVolume] = useState<EditingVolumeState>();
@@ -27,6 +31,7 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
   const [saving, setSaving] = useState(false);
   const [volumeFormApi, setVolumeFormApi] = useState<FormApi>();
   const [planFormApi, setPlanFormApi] = useState<FormApi>();
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const selectedVolume = useMemo(() => volumes.find((volume) => volume.id === selectedVolumeId), [selectedVolumeId, volumes]);
   const selectedPlan = useMemo(() => plans.find((plan) => plan.id === selectedPlanId) ?? plans[0], [plans, selectedPlanId]);
@@ -61,6 +66,18 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
   }, [includeArchived, projectId, selectedVolumeId]);
 
   useEffect(() => {
+    updateNovelLocation({
+      app: 'shelf',
+      view: 'workspace',
+      projectId,
+      section: 'planning',
+      volumeId: selectedVolumeId,
+      planId: selectedPlanId,
+      includeArchived,
+    });
+  }, [includeArchived, projectId, selectedPlanId, selectedVolumeId]);
+
+  useEffect(() => {
     setLoading(true);
     refreshVolumes().finally(() => setLoading(false));
   }, [refreshVolumes]);
@@ -79,6 +96,7 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
         ? await createVolume(projectId, input)
         : await updateVolume(projectId, editingVolume.volume.id, input);
       Notification.success({ title: '分卷已保存' });
+      unsavedGuard.resetDirty('volume');
       setEditingVolume(undefined);
       await refreshVolumes();
       setSelectedVolumeId(saved.id);
@@ -99,6 +117,7 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
         ? await createChapterPlan(projectId, input)
         : await updateChapterPlan(projectId, editingPlan.plan.id, input);
       Notification.success({ title: '章节计划已保存' });
+      unsavedGuard.resetDirty('plan');
       setEditingPlan(undefined);
       await refreshPlans(saved.id);
     } catch (error) {
@@ -133,21 +152,21 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
     }
   }
 
-  return <div>
-    <section style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 16 }}>
+  return <div className="planning-workspace">
+    <section className="app-page-hero">
       <div>
         <Title heading={3} style={{ margin: 0 }}>规划</Title>
         <Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>按分卷/故事单元组织轻量章节计划；P1 不提供 AI 生成、复杂拖拽或时间线。</Text>
       </div>
-      <Space>
+      <Space className="app-page-actions">
         <Switch checked={includeArchived} onChange={setIncludeArchived} />
         <Text type="tertiary">显示归档计划</Text>
         <Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditingPlan({ mode: 'create' })}>新增章节计划</Button>
       </Space>
     </section>
 
-    <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(320px, 0.9fr) minmax(360px, 1.1fr)', gap: 16, alignItems: 'start' }}>
-      <Card style={{ borderRadius: 12, minHeight: 600 }} bodyStyle={{ padding: 12 }}>
+    <div className="planning-workspace__grid">
+      <Card className="planning-workspace__card" bodyStyle={{ padding: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <Title heading={5} style={{ margin: 0 }}>分卷 / 故事单元</Title>
           <Button size="small" icon={<IconPlus />} theme="light" type="primary" onClick={() => setEditingVolume({ mode: 'create' })}>新增</Button>
@@ -167,14 +186,14 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
               <Text type="tertiary" size="small" ellipsis={{ showTooltip: true }} style={{ display: 'block', marginTop: 6 }}>{volume.goal || volume.summary || '未填写目标'}</Text>
             </button>
             <Space vertical spacing={2}>
-              <Button size="small" icon={<IconEdit />} theme="borderless" onClick={() => setEditingVolume({ mode: 'edit', volume })} />
-              <Popconfirm title="确认删除这个分卷？" content="分卷会被软删除，已有章节计划会保留其历史关联。" onConfirm={() => handleDeleteVolume(volume)}><Button size="small" icon={<IconDelete />} type="danger" theme="borderless" /></Popconfirm>
+              <Button size="small" icon={<IconEdit />} theme="borderless" aria-label={`编辑分卷 ${volume.title}`} onClick={() => setEditingVolume({ mode: 'edit', volume })} />
+              <Popconfirm title="确认删除这个分卷？" content="分卷会被软删除，已有章节计划会保留其历史关联。" onConfirm={() => handleDeleteVolume(volume)}><Button size="small" icon={<IconDelete />} type="danger" theme="borderless" aria-label={`删除分卷 ${volume.title}`} /></Popconfirm>
             </Space>
           </div>)}
         </div>}
       </Card>
 
-      <Card style={{ borderRadius: 12, minHeight: 600 }} bodyStyle={{ padding: 12 }}>
+      <Card className="planning-workspace__card" bodyStyle={{ padding: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
           <div>
             <Title heading={5} style={{ margin: 0 }}>章节计划</Title>
@@ -196,13 +215,13 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
         </div>}
       </Card>
 
-      <Card style={{ borderRadius: 12, minHeight: 600 }} bodyStyle={{ padding: 20 }}>
+      <Card className="planning-workspace__card" bodyStyle={{ padding: 20 }}>
         {!selectedPlan ? <EmptyState title="未选择章节计划" description="从中间列表选择一条计划，或新增计划。" /> : <PlanDetail plan={selectedPlan} volume={volumes.find((volume) => volume.id === selectedPlan.volumeId)} onEdit={() => setEditingPlan({ mode: 'edit', plan: selectedPlan })} onAction={(action) => mutatePlan(selectedPlan, action)} />}
       </Card>
     </div>
 
-    <SideSheet title={editingVolume?.mode === 'create' ? '新增分卷/故事单元' : '编辑分卷/故事单元'} visible={Boolean(editingVolume)} onCancel={() => setEditingVolume(undefined)} width={520} footer={<SheetFooter onCancel={() => setEditingVolume(undefined)} onSave={saveVolume} saving={saving} />}>
-      {editingVolume ? <Form key={editingVolume.mode === 'create' ? 'new-volume' : editingVolume.volume.id} initValues={editingVolume.mode === 'create' ? { orderIndex: nextVolumeOrderIndex, status: 'planned' } : editingVolume.volume} getFormApi={setVolumeFormApi} labelPosition="top">
+    <SideSheet title={editingVolume?.mode === 'create' ? '新增分卷/故事单元' : '编辑分卷/故事单元'} visible={Boolean(editingVolume)} onCancel={() => unsavedGuard.guard('volume', () => setEditingVolume(undefined))} width={520} footer={<SheetFooter onCancel={() => unsavedGuard.guard('volume', () => setEditingVolume(undefined))} onSave={saveVolume} saving={saving} />}>
+      {editingVolume ? <Form key={editingVolume.mode === 'create' ? 'new-volume' : editingVolume.volume.id} initValues={editingVolume.mode === 'create' ? { orderIndex: nextVolumeOrderIndex, status: 'planned' } : editingVolume.volume} getFormApi={setVolumeFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('volume')}>
         <Form.Input field="title" label="分卷/故事单元名" rules={[{ required: true, message: '请填写名称' }]} />
         <Form.TextArea field="goal" label="目标" autosize={{ minRows: 3, maxRows: 6 }} />
         <Form.TextArea field="summary" label="简介" autosize={{ minRows: 3, maxRows: 6 }} />
@@ -213,8 +232,8 @@ export function PlanningWorkspace({ projectId }: { projectId: string }) {
       </Form> : null}
     </SideSheet>
 
-    <SideSheet title={editingPlan?.mode === 'create' ? '新增章节计划' : '编辑章节计划'} visible={Boolean(editingPlan)} onCancel={() => setEditingPlan(undefined)} width={640} footer={<SheetFooter onCancel={() => setEditingPlan(undefined)} onSave={savePlan} saving={saving} />}>
-      {editingPlan ? <Form key={editingPlan.mode === 'create' ? `new-plan:${selectedVolumeId}` : editingPlan.plan.id} initValues={editingPlan.mode === 'create' ? { volumeId: selectedVolumeId === noVolumeId ? undefined : selectedVolumeId, status: 'planned', orderIndex: nextPlanOrderIndex } : formPlanValues(editingPlan.plan)} getFormApi={setPlanFormApi} labelPosition="top">
+    <SideSheet title={editingPlan?.mode === 'create' ? '新增章节计划' : '编辑章节计划'} visible={Boolean(editingPlan)} onCancel={() => unsavedGuard.guard('plan', () => setEditingPlan(undefined))} width={640} footer={<SheetFooter onCancel={() => unsavedGuard.guard('plan', () => setEditingPlan(undefined))} onSave={savePlan} saving={saving} />}>
+      {editingPlan ? <Form key={editingPlan.mode === 'create' ? `new-plan:${selectedVolumeId}` : editingPlan.plan.id} initValues={editingPlan.mode === 'create' ? { volumeId: selectedVolumeId === noVolumeId ? undefined : selectedVolumeId, status: 'planned', orderIndex: nextPlanOrderIndex } : formPlanValues(editingPlan.plan)} getFormApi={setPlanFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('plan')}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
           <Form.Input field="title" label="计划标题" />
           <Form.Select field="volumeId" label="所属分卷" showClear placeholder="未分卷" style={{ width: '100%' }}>{volumes.map((volume) => <Select.Option key={volume.id} value={volume.id}>{volume.title}</Select.Option>)}</Form.Select>

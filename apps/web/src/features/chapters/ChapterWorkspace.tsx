@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Checkbox, Empty, Form, Notification, Popconfirm, Select, SideSheet, Skeleton, Space, Tag, Typography } from '@douyinfe/semi-ui';
 import { IllustrationNoContent, IllustrationNoContentDark } from '@douyinfe/semi-illustrations';
 import { IconDelete, IconEdit, IconPlus, IconRefresh } from '@douyinfe/semi-icons';
+import { useUnsavedChangesGuard } from '../../shared/hooks/useUnsavedChangesGuard';
+import { readInitialNovelLocation, updateNovelLocation } from '../../shared/navigation/workspaceLocation';
 import { StatusTag, statusOptions } from '../../shared/ui/StatusTag';
 import { listCharacters, listLocations } from '../projects/api';
 import type { Character, Location } from '../projects/types';
@@ -62,6 +64,13 @@ type SceneProgress = {
 };
 type WritingIssue = { key: string; message: string; sceneId?: string; target: DetailTab | SceneDetailTab };
 
+type NextSuggestion =
+  | { kind: 'createScene'; label: string }
+  | { kind: 'sceneTask'; label: string; sceneId: string; sceneTab: SceneDetailTab }
+  | { kind: 'assembleChapter'; label: string }
+  | { kind: 'rollupSummary'; label: string }
+  | { kind: 'chapterComplete'; label: string };
+
 type SelectOption = { label: string; value: string };
 
 const chapterStatusOptions = statusOptions(['draft', 'generating', 'reviewing', 'done', 'archived'] as const);
@@ -76,17 +85,19 @@ const sceneTabs: SceneDetailTab[] = ['plan', 'version', 'summary', 'handoff'];
 const resourceTitle: Record<SceneResourceKind, string> = { plan: '场景计划', version: '场景正文版本', summary: '场景摘要', handoff: '场景交接' };
 
 export function ChapterWorkspace({ projectId }: { projectId: string }) {
+  const initialLocation = useMemo(() => readInitialNovelLocation(), []);
+  const initialMatchesProject = initialLocation.projectId === projectId;
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [selectedChapterId, setSelectedChapterId] = useState<string>();
+  const [selectedChapterId, setSelectedChapterId] = useState<string | undefined>(() => initialMatchesProject ? initialLocation.chapterId : undefined);
   const [profile, setProfile] = useState<ChapterProfile>();
-  const [activeTab, setActiveTab] = useState<DetailTab>('flow');
-  const [sceneTab, setSceneTab] = useState<SceneDetailTab>('plan');
+  const [activeTab, setActiveTab] = useState<DetailTab>(() => initialMatchesProject ? initialLocation.chapterTab ?? 'flow' : 'flow');
+  const [sceneTab, setSceneTab] = useState<SceneDetailTab>(() => initialMatchesProject ? initialLocation.sceneTab ?? 'plan' : 'plan');
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [progressLoading, setProgressLoading] = useState(false);
   const [chapterProgress, setChapterProgress] = useState<Record<string, SceneProgress>>({});
   const [chapterScenes, setChapterScenes] = useState<Scene[]>([]);
-  const [selectedSceneId, setSelectedSceneId] = useState<string>();
+  const [selectedSceneId, setSelectedSceneId] = useState<string | undefined>(() => initialMatchesProject ? initialLocation.sceneId : undefined);
   const [selectedSceneProfile, setSelectedSceneProfile] = useState<SceneProfile>();
   const [sceneProfiles, setSceneProfiles] = useState<Record<string, SceneProfile | undefined>>({});
   const [scenePlans, setScenePlans] = useState<ScenePlan[]>([]);
@@ -114,6 +125,9 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   const [assembleActivate, setAssembleActivate] = useState(true);
   const [assembling, setAssembling] = useState(false);
   const [sceneFilter, setSceneFilter] = useState<'all' | 'blocked' | 'no-body' | 'no-summary' | 'no-handoff'>('all');
+  const [inlineError, setInlineError] = useState<{ title: string; message: string }>();
+  const [resourceSaveError, setResourceSaveError] = useState<{ title: string; message: string }>();
+  const unsavedGuard = useUnsavedChangesGuard();
 
   const selectedChapter = useMemo(() => chapters.find((chapter) => chapter.id === selectedChapterId), [chapters, selectedChapterId]);
   const selectedScene = useMemo(() => chapterScenes.find((scene) => scene.id === selectedSceneId), [chapterScenes, selectedSceneId]);
@@ -194,6 +208,19 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
     }
   }
 
+  useEffect(() => {
+    updateNovelLocation({
+      app: 'shelf',
+      view: 'workspace',
+      projectId,
+      section: 'chapters',
+      chapterId: selectedChapterId,
+      chapterTab: activeTab,
+      sceneId: selectedSceneId,
+      sceneTab,
+    });
+  }, [activeTab, projectId, sceneTab, selectedChapterId, selectedSceneId]);
+
   useEffect(() => { refreshChapters(); }, [refreshChapters]);
 
   useEffect(() => {
@@ -216,7 +243,6 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
     if (selectedChapterId) {
       refreshProfile(selectedChapterId);
       refreshSelectedChapterScenes(selectedChapterId);
-      setActiveTab('flow');
     } else {
       setProfile(undefined);
       setDraftContent('');
@@ -274,6 +300,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       const input = normalizeChapterInput(values, editingChapter.mode === 'create');
       const saved = await (editingChapter.mode === 'create' ? createChapter(projectId, input) : updateChapter(projectId, editingChapter.chapter.id, input));
       Notification.success({ title: '章节已保存' });
+      unsavedGuard.resetDirty('chapter');
       setEditingChapter(undefined);
       setSelectedChapterId(saved.id);
       await refreshChapters();
@@ -303,6 +330,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       const input = normalizeSceneInput(values);
       const saved = editingScene.mode === 'create' ? await createScene(projectId, selectedChapter.id, input) : await updateScene(projectId, editingScene.scene.id, input);
       Notification.success({ title: '场景已保存' });
+      unsavedGuard.resetDirty('scene');
       setEditingScene(undefined);
       await refreshAfterSceneChange(saved.id);
     } catch (error) {
@@ -325,6 +353,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   async function saveSceneResource() {
     if (!resourceFormApi || !editingSceneResource || !selectedScene) return;
     setSaving(true);
+    setResourceSaveError(undefined);
     try {
       const values = await resourceFormApi.validate() as Record<string, unknown>;
       const result = await saveResource(projectId, selectedScene.id, editingSceneResource, values, selectedSceneProfile?.scene.currentVersionId);
@@ -333,10 +362,14 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
         if (editingSceneResource.kind === 'version') await activateSceneVersion(projectId, selectedScene.id, result.id);
       }
       Notification.success({ title: `${resourceTitle[editingSceneResource.kind]}已保存` });
+      unsavedGuard.resetDirty('scene-resource');
       setEditingSceneResource(undefined);
       await refreshAfterSceneChange(selectedScene.id);
     } catch (error) {
-      Notification.error({ title: '场景资料保存失败', content: String((error as Error).message ?? error) });
+      const message = String((error as Error).message ?? error);
+      const title = '场景资料保存失败';
+      setResourceSaveError({ title, message });
+      Notification.error({ title, content: message });
     } finally {
       setSaving(false);
     }
@@ -389,13 +422,14 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       return;
     }
     setSavingVersion(true);
+    clearInlineError();
     try {
       const version = await createChapterVersion(projectId, selectedChapter.id, { content: draftContent, changeSummary: draftSummary.trim() || undefined, source: 'user' });
       if (activate) await activateChapterVersion(projectId, selectedChapter.id, version.id);
       Notification.success({ title: activate ? '章节正文版本已保存并设为当前' : '章节正文版本已保存' });
       await Promise.all([refreshChapters(), refreshProfile(selectedChapter.id)]);
     } catch (error) {
-      Notification.error({ title: '章节正文保存失败', content: String((error as Error).message ?? error) });
+      keepInlineError('章节正文保存失败', error);
     } finally {
       setSavingVersion(false);
     }
@@ -426,6 +460,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       return;
     }
     setAssembling(true);
+    clearInlineError();
     try {
       const input: AssembleChapterInput = { includeSceneTitles, activate: assembleActivate };
       const version = await assembleChapterFromScenes(projectId, selectedChapter.id, input);
@@ -434,7 +469,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       setDraftContent(version.content);
       setActiveTab('body');
     } catch (error) {
-      Notification.error({ title: '从场景装配失败', content: String((error as Error).message ?? error) });
+      keepInlineError('从场景装配失败', error);
     } finally {
       setAssembling(false);
     }
@@ -443,16 +478,18 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   async function saveSummary() {
     if (!selectedChapter || !editingSummary || !summaryFormApi) return;
     setSummarySaving(true);
+    clearInlineError();
     try {
       const values = await summaryFormApi.validate() as Record<string, unknown>;
       const input = normalizeSummaryInput(values);
       await (editingSummary.mode === 'create' ? createChapterSummary(projectId, selectedChapter.id, input) : updateChapterSummary(projectId, editingSummary.summary.id, input));
       Notification.success({ title: '章节摘要已保存' });
+      unsavedGuard.resetDirty('summary');
       setEditingSummary(undefined);
       await refreshProfile(selectedChapter.id);
       setActiveTab('summaries');
     } catch (error) {
-      Notification.error({ title: '章节摘要保存失败', content: String((error as Error).message ?? error) });
+      keepInlineError('章节摘要保存失败', error);
     } finally {
       setSummarySaving(false);
     }
@@ -475,13 +512,14 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   async function handleRollupSummaryFromScenes() {
     if (!selectedChapter) return;
     setRollingUpSummary(true);
+    clearInlineError();
     try {
       await rollupChapterSummaryFromScenes(projectId, selectedChapter.id);
       Notification.success({ title: '已从已确认场景摘要汇总章节摘要' });
       await refreshProfile(selectedChapter.id);
       setActiveTab('summaries');
     } catch (error) {
-      Notification.error({ title: '摘要汇总失败', content: String((error as Error).message ?? error) });
+      keepInlineError('摘要汇总失败', error);
     } finally {
       setRollingUpSummary(false);
     }
@@ -499,44 +537,82 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
 
   const visibleScenes = filterScenes(chapterScenes, sceneProfiles, sceneFilter);
 
-  return <div>
-    <section style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 16 }}>
+  function clearInlineError() {
+    setInlineError(undefined);
+  }
+
+  function keepInlineError(title: string, error: unknown) {
+    const message = String((error as Error).message ?? error);
+    setInlineError({ title, message });
+    Notification.error({ title, content: message });
+  }
+
+  function closeSheet(key: string, close: () => void) {
+    unsavedGuard.guard(key, close);
+  }
+
+  function handleSuggestionAction(item: NextSuggestion) {
+    if (item.kind === 'createScene') {
+      setEditingScene({ mode: 'create' });
+      return;
+    }
+    if (item.kind === 'assembleChapter') {
+      setActiveTab('body');
+      return;
+    }
+    if (item.kind === 'rollupSummary') {
+      setActiveTab('summaries');
+      return;
+    }
+    if (item.kind === 'chapterComplete') return;
+    if (item.sceneId) setSelectedSceneId(item.sceneId);
+    setActiveTab('flow');
+    setSceneTab(item.sceneTab);
+  }
+
+  return <div className="chapter-workspace">
+    <section className="app-page-hero">
       <div>
         <Title heading={3} style={{ margin: 0 }}>章节写作</Title>
         <Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>在第 N 章内完成场景计划、场景正文、摘要交接、章节装配和章节摘要闭环。</Text>
       </div>
-      <Space>
+      <Space className="app-page-actions">
         <Button icon={<IconRefresh />} onClick={() => selectedChapterId ? Promise.all([refreshChapters(), refreshProfile(selectedChapterId), refreshSelectedChapterScenes(selectedChapterId)]) : refreshChapters()}>刷新</Button>
         <Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditingChapter({ mode: 'create' })}>新增章节</Button>
       </Space>
     </section>
 
-    <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
-      <Card title="章节列表" style={{ borderRadius: 12, minHeight: 560 }} bodyStyle={{ padding: 12 }}>
-        {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={8} />} loading /> : chapters.length === 0 ? <EmptyState title="暂无章节" description="先创建章节。创建后可以直接在这里添加本章场景并开始写作。" /> : <div style={{ display: 'grid', gap: 8 }}>
+    {inlineError ? <div role="alert" style={{ marginBottom: 16, padding: 12, border: '1px solid var(--semi-color-danger)', borderRadius: 10, background: 'var(--semi-color-danger-light-default)' }}>
+      <Text strong type="danger">{inlineError.title}</Text>
+      <Paragraph style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{inlineError.message}</Paragraph>
+    </div> : null}
+
+    <div className="chapter-workspace__layout">
+      <Card title="章节切换" className="chapter-workspace__chapters" bodyStyle={{ padding: 12 }}>
+        {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={8} />} loading /> : chapters.length === 0 ? <EmptyState title="暂无章节" description="先创建章节。创建后可以直接在这里添加本章场景并开始写作。" action={<Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditingChapter({ mode: 'create' })}>新增章节</Button>} /> : <div className="chapter-switcher">
           {chapters.map((chapter) => {
             const selected = chapter.id === selectedChapterId;
             const progress = chapterProgress[chapter.id];
-            return <article key={chapter.id} onClick={() => setSelectedChapterId(chapter.id)} style={{ cursor: 'pointer', display: 'grid', gap: 8, padding: 12, border: `1px solid ${selected ? 'var(--semi-color-primary)' : 'var(--semi-color-border)'}`, borderRadius: 12, background: selected ? 'var(--semi-color-primary-light-default)' : 'var(--semi-color-bg-0)' }}>
+            return <button type="button" key={chapter.id} className="chapter-switcher__item" onClick={() => setSelectedChapterId(chapter.id)} style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer', display: 'grid', gap: 8, padding: 12, border: `1px solid ${selected ? 'var(--semi-color-primary)' : 'var(--semi-color-border)'}`, borderRadius: 12, background: selected ? 'var(--semi-color-primary-light-default)' : 'var(--semi-color-bg-0)', color: 'var(--semi-color-text-0)' }}>
               <Space wrap spacing={6} style={{ rowGap: 6 }}>
-                <Title heading={6} style={{ margin: 0 }}>{chapter.title}</Title>
+                <Text strong>{chapter.title}</Text>
                 <Tag size="small">#{chapter.orderIndex}</Tag>
                 <StatusTag status={chapter.status} />
               </Space>
-              <Paragraph type={chapter.goal ? undefined : 'tertiary'} ellipsis={{ rows: 2, showTooltip: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{chapter.goal || '未填写章节目标'}</Paragraph>
+              <Text type={chapter.goal ? undefined : 'tertiary'} ellipsis={{ showTooltip: true }} style={{ display: 'block', whiteSpace: 'pre-wrap' }}>{chapter.goal || '未填写章节目标'}</Text>
               <Space wrap spacing={8}>
                 <Tag size="small">场景 {progress?.currentVersionCount ?? 0}/{progress?.sceneCount ?? 0} 有正文</Tag>
                 <Tag size="small">摘要 {progress?.confirmedSummaryCount ?? 0}/{progress?.sceneCount ?? 0}</Tag>
                 <Tag size="small">交接 {progress?.confirmedHandoffCount ?? 0}/{progress?.sceneCount ?? 0}</Tag>
                 {chapter.currentVersionId ? <Tag size="small" color="green">当前正文：有</Tag> : <Tag size="small">当前正文：无</Tag>}
               </Space>
-            </article>;
+            </button>;
           })}
         </div>}
       </Card>
 
-      <Card style={{ borderRadius: 12, minHeight: 560 }} bodyStyle={{ padding: 16 }}>
-        {!selectedChapter ? <EmptyState title="未选择章节" description="请从左侧选择章节，或新增章节。" /> : profileLoading ? <Skeleton placeholder={<Skeleton.Paragraph rows={10} />} loading /> : <div>
+      <Card className="chapter-workspace__main" bodyStyle={{ padding: 16 }}>
+        {!selectedChapter ? <EmptyState title="未选择章节" description="从上方章节切换条选择章节，或新增章节。" action={<Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditingChapter({ mode: 'create' })}>新增章节</Button>} /> : profileLoading ? <Skeleton placeholder={<Skeleton.Paragraph rows={10} />} loading /> : <div>
           <section style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
             <div style={{ minWidth: 0 }}>
               <Space wrap spacing={8} style={{ rowGap: 8 }}>
@@ -554,10 +630,11 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
             </Space>
           </section>
 
-          <Space style={{ marginBottom: 16 }} wrap>
-            {detailTabs.map((tab) => <Button key={tab} theme={activeTab === tab ? 'solid' : 'borderless'} type={activeTab === tab ? 'primary' : 'tertiary'} onClick={() => setActiveTab(tab)}>{tabLabel(tab)}</Button>)}
-          </Space>
+          <div role="tablist" aria-label="章节详情" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            {detailTabs.map((tab) => <Button key={tab} id={`chapter-tab-${tab}`} role="tab" aria-selected={activeTab === tab} aria-controls={`chapter-panel-${tab}`} theme={activeTab === tab ? 'solid' : 'borderless'} type={activeTab === tab ? 'primary' : 'tertiary'} onClick={() => setActiveTab(tab)}>{tabLabel(tab)}</Button>)}
+          </div>
 
+          <div id={`chapter-panel-${activeTab}`} role="tabpanel" aria-labelledby={`chapter-tab-${activeTab}`}>
           {activeTab === 'flow' ? <WritingFlowPanel
             loading={progressLoading}
             scenes={visibleScenes}
@@ -577,8 +654,8 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
             onCreateScene={() => setEditingScene({ mode: 'create' })}
             onEditScene={(scene) => setEditingScene({ mode: 'edit', scene })}
             onDeleteScene={handleDeleteScene}
-            onCreateResource={(kind) => setEditingSceneResource({ kind, mode: 'create' })}
-            onEditResource={(kind, item) => setEditingSceneResource({ kind, mode: 'edit', item })}
+            onCreateResource={(kind) => { setResourceSaveError(undefined); setEditingSceneResource({ kind, mode: 'create' }); }}
+            onEditResource={(kind, item) => { setResourceSaveError(undefined); setEditingSceneResource({ kind, mode: 'edit', item }); }}
             onDeleteResource={handleResourceDelete}
             onActivateResource={handleActivateSceneResource}
             onLifecycle={handleResourceLifecycle}
@@ -587,14 +664,15 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
           {activeTab === 'summaries' ? <SummariesPanel summaries={profile?.summaries ?? []} currentSummary={profile?.currentSummary} currentVersionId={profile?.chapter.currentVersionId ?? selectedChapter.currentVersionId} rollingUp={rollingUpSummary} onCreate={() => setEditingSummary({ mode: 'create' })} onEdit={(summary) => setEditingSummary({ mode: 'edit', summary })} onAction={handleSummaryAction} onRollup={handleRollupSummaryFromScenes} /> : null}
           {activeTab === 'versions' ? <VersionsPanel versions={profile?.versions ?? []} currentVersionId={profile?.chapter.currentVersionId ?? selectedChapter.currentVersionId} onPreview={handlePreviewVersion} onActivate={handleActivateVersion} /> : null}
           {activeTab === 'overview' ? <OverviewPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onAssemble={handleAssembleFromScenes} includeSceneTitles={includeSceneTitles} setIncludeSceneTitles={setIncludeSceneTitles} assembleActivate={assembleActivate} setAssembleActivate={setAssembleActivate} assembling={assembling} /> : null}
+          </div>
         </div>}
       </Card>
 
-      <ContextPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onIssueClick={focusIssue} onCreateScene={() => setEditingScene({ mode: 'create' })} onAssemble={() => setActiveTab('body')} onRollup={() => setActiveTab('summaries')} />
+      <ContextPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onIssueClick={focusIssue} onSuggestionClick={handleSuggestionAction} />
     </div>
 
-    <SideSheet title={editingChapter?.mode === 'create' ? '新增章节' : '编辑章节'} visible={Boolean(editingChapter)} onCancel={() => setEditingChapter(undefined)} width={560} footer={<SheetFooter onCancel={() => setEditingChapter(undefined)} onSave={saveChapter} saving={saving} />}>
-      {editingChapter ? <Form key={editingChapter.mode === 'create' ? 'new-chapter' : editingChapter.chapter.id} initValues={editingChapter.mode === 'create' ? { status: 'draft', orderIndex: nextOrderIndex } : editingChapter.chapter} getFormApi={setFormApi} labelPosition="top">
+    <SideSheet title={editingChapter?.mode === 'create' ? '新增章节' : '编辑章节'} visible={Boolean(editingChapter)} onCancel={() => closeSheet('chapter', () => setEditingChapter(undefined))} width={560} footer={<SheetFooter onCancel={() => closeSheet('chapter', () => setEditingChapter(undefined))} onSave={saveChapter} saving={saving} />}>
+      {editingChapter ? <Form key={editingChapter.mode === 'create' ? 'new-chapter' : editingChapter.chapter.id} initValues={editingChapter.mode === 'create' ? { status: 'draft', orderIndex: nextOrderIndex } : editingChapter.chapter} getFormApi={setFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('chapter')}>
         <Form.Input field="title" label="章节标题" rules={[{ required: true, message: '请填写章节标题' }]} />
         <Form.Input field="plannedTitle" label="计划标题" />
         <Form.TextArea field="goal" label="章节目标" autosize={{ minRows: 3, maxRows: 8 }} />
@@ -605,8 +683,8 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       </Form> : null}
     </SideSheet>
 
-    <SideSheet title={editingScene?.mode === 'create' ? '新增本章场景' : '编辑场景基础信息'} visible={Boolean(editingScene)} onCancel={() => setEditingScene(undefined)} width={620} footer={<SheetFooter onCancel={() => setEditingScene(undefined)} onSave={saveScene} saving={saving} />}>
-      {editingScene ? <Form key={editingScene.mode === 'create' ? `new-scene-${selectedChapterId}` : editingScene.scene.id} initValues={editingScene.mode === 'create' ? { status: 'planned', orderIndex: nextSceneOrderIndex } : editingScene.scene} getFormApi={setSceneFormApi} labelPosition="top">
+    <SideSheet title={editingScene?.mode === 'create' ? '新增本章场景' : '编辑场景基础信息'} visible={Boolean(editingScene)} onCancel={() => closeSheet('scene', () => setEditingScene(undefined))} width={620} footer={<SheetFooter onCancel={() => closeSheet('scene', () => setEditingScene(undefined))} onSave={saveScene} saving={saving} />}>
+      {editingScene ? <Form key={editingScene.mode === 'create' ? `new-scene-${selectedChapterId}` : editingScene.scene.id} initValues={editingScene.mode === 'create' ? { status: 'planned', orderIndex: nextSceneOrderIndex } : editingScene.scene} getFormApi={setSceneFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('scene')}>
         <Form.Input field="title" label="场景标题" />
         <Form.TextArea field="goal" label="场景目标" autosize={{ minRows: 3, maxRows: 8 }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
@@ -621,17 +699,23 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       </Form> : null}
     </SideSheet>
 
-    <SideSheet title={editingSceneResource ? `${editingSceneResource.mode === 'create' ? '新增' : '编辑'}${resourceTitle[editingSceneResource.kind]}` : ''} visible={Boolean(editingSceneResource)} onCancel={() => setEditingSceneResource(undefined)} width={editingSceneResource?.kind === 'version' ? 'min(80vw, 900px)' : 'min(72vw, 820px)'} footer={<SheetFooter onCancel={() => setEditingSceneResource(undefined)} onSave={saveSceneResource} saving={saving} />}>
-      {editingSceneResource ? <SceneResourceForm editing={editingSceneResource} formApiSetter={setResourceFormApi} currentVersionId={selectedSceneProfile?.scene.currentVersionId} sceneVersionOptions={sceneVersions.map((version) => ({ value: version.id, label: versionLabel(version) }))} sceneOptions={sceneOptions} /> : null}
+    <SideSheet title={editingSceneResource ? `${editingSceneResource.mode === 'create' ? '新增' : '编辑'}${resourceTitle[editingSceneResource.kind]}` : ''} visible={Boolean(editingSceneResource)} onCancel={() => closeSheet('scene-resource', () => setEditingSceneResource(undefined))} width={editingSceneResource?.kind === 'version' ? 'min(80vw, 900px)' : 'min(72vw, 820px)'} footer={<SheetFooter onCancel={() => closeSheet('scene-resource', () => setEditingSceneResource(undefined))} onSave={saveSceneResource} saving={saving} />}>
+      {editingSceneResource ? <>
+        {resourceSaveError ? <div role="alert" style={{ marginBottom: 12, padding: 12, border: '1px solid var(--semi-color-danger)', borderRadius: 10, background: 'var(--semi-color-danger-light-default)' }}>
+          <Text strong type="danger">{resourceSaveError.title}</Text>
+          <Paragraph style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>{resourceSaveError.message}</Paragraph>
+        </div> : null}
+        <SceneResourceForm editing={editingSceneResource} formApiSetter={setResourceFormApi} currentVersionId={selectedSceneProfile?.scene.currentVersionId} sceneVersionOptions={sceneVersions.map((version) => ({ value: version.id, label: versionLabel(version) }))} sceneOptions={sceneOptions} onDirty={() => { setResourceSaveError(undefined); unsavedGuard.markDirty('scene-resource'); }} />
+      </> : null}
     </SideSheet>
 
-    <SideSheet title={editingSummary?.mode === 'create' ? '新增章节摘要' : '编辑章节摘要'} visible={Boolean(editingSummary)} onCancel={() => setEditingSummary(undefined)} width={680} footer={<SheetFooter onCancel={() => setEditingSummary(undefined)} onSave={saveSummary} saving={summarySaving} />}>
-      {editingSummary ? <Form key={editingSummary.mode === 'create' ? 'new-summary' : editingSummary.summary.id} initValues={summaryInitialValues(editingSummary, profile?.chapter.currentVersionId)} getFormApi={setSummaryFormApi} labelPosition="top">
+    <SideSheet title={editingSummary?.mode === 'create' ? '新增章节摘要' : '编辑章节摘要'} visible={Boolean(editingSummary)} onCancel={() => closeSheet('summary', () => setEditingSummary(undefined))} width={680} footer={<SheetFooter onCancel={() => closeSheet('summary', () => setEditingSummary(undefined))} onSave={saveSummary} saving={summarySaving} />}>
+      {editingSummary ? <Form key={editingSummary.mode === 'create' ? 'new-summary' : editingSummary.summary.id} initValues={summaryInitialValues(editingSummary, profile?.chapter.currentVersionId)} getFormApi={setSummaryFormApi} labelPosition="top" onValueChange={() => unsavedGuard.markDirty('summary')}>
         <Form.TextArea field="summary" label="章节摘要" rules={[{ required: true, message: '请填写章节摘要' }]} autosize={{ minRows: 5, maxRows: 12 }} />
-        <Form.Input field="chapterVersionId" label="绑定 ChapterVersionId（可选）" />
-        <Form.TextArea field="keyEventsText" label="关键事件 JSON（可选）" placeholder={'例如：[{"event":"主角离开故乡"}]'} autosize={{ minRows: 3, maxRows: 8 }} />
-        <Form.TextArea field="characterChangesText" label="人物变化 JSON（可选）" autosize={{ minRows: 3, maxRows: 8 }} />
-        <Form.TextArea field="newFactsText" label="新增事实 JSON（可选）" autosize={{ minRows: 3, maxRows: 8 }} />
+        <Form.Input field="chapterVersionId" label="关联章节正文版本（可选）" />
+        <Form.TextArea field="keyEventsText" label="关键事件（可选）" placeholder={'例如：主角离开故乡'} extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 3, maxRows: 8 }} />
+        <Form.TextArea field="characterChangesText" label="人物变化（可选）" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 3, maxRows: 8 }} />
+        <Form.TextArea field="newFactsText" label="新增事实（可选）" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 3, maxRows: 8 }} />
         <Text type="tertiary" size="small">章节摘要只供人工维护和场景摘要汇总，不会触发 AI 自动总结，也不会写入长期 MemoryRecord。</Text>
       </Form> : null}
     </SideSheet>
@@ -663,8 +747,8 @@ function WritingFlowPanel({ loading, scenes, allScenes, profiles, selectedScene,
   onActivateResource: (kind: 'plan' | 'version', item: ScenePlan | SceneVersion) => void;
   onLifecycle: (kind: 'summary' | 'handoff', item: SceneSummary | SceneHandoff, action: 'confirm' | 'archive' | 'restore') => void;
 }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 16 }}>
-    <Card title="本章场景" bodyStyle={{ padding: 12 }}>
+  return <div className="writing-flow-grid">
+    <Card title="本章场景" className="scene-list-card" bodyStyle={{ padding: 12 }}>
       <Space wrap spacing={6} style={{ marginBottom: 12, rowGap: 6 }}>
         <Button size="small" theme={sceneFilter === 'all' ? 'solid' : 'light'} type="primary" onClick={() => setSceneFilter('all')}>全部</Button>
         <Button size="small" theme={sceneFilter === 'blocked' ? 'solid' : 'light'} type="primary" onClick={() => setSceneFilter('blocked')}>有阻塞</Button>
@@ -673,13 +757,13 @@ function WritingFlowPanel({ loading, scenes, allScenes, profiles, selectedScene,
         <Button size="small" theme={sceneFilter === 'no-handoff' ? 'solid' : 'light'} type="primary" onClick={() => setSceneFilter('no-handoff')}>缺交接</Button>
       </Space>
       <Button icon={<IconPlus />} theme="solid" type="primary" block onClick={onCreateScene} style={{ marginBottom: 12 }}>新增场景</Button>
-      {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading /> : allScenes.length === 0 ? <EmptyState title="暂无场景" description="添加第一个场景后，就可以在章节页内写计划、正文、摘要和交接。" /> : scenes.length === 0 ? <EmptyState title="当前筛选无结果" description="切回全部场景继续查看。" /> : <div style={{ display: 'grid', gap: 8 }}>
+      {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading /> : allScenes.length === 0 ? <EmptyState title="暂无场景" description="添加第一个场景后，就可以在章节页内写计划、正文、摘要和交接。" action={<Button theme="solid" type="primary" icon={<IconPlus />} onClick={onCreateScene}>新增场景</Button>} /> : scenes.length === 0 ? <EmptyState title="当前筛选无结果" description="切回全部场景继续查看。" action={<Button theme="light" type="primary" onClick={() => setSceneFilter('all')}>查看全部场景</Button>} /> : <div style={{ display: 'grid', gap: 8 }}>
         {scenes.map((scene) => <SceneCard key={scene.id} scene={scene} selected={scene.id === selectedScene?.id} profile={profiles[scene.id]} onClick={() => onSelectScene(scene.id)} />)}
       </div>}
     </Card>
 
-    <Card title="当前场景详情" bodyStyle={{ padding: 16 }}>
-      {!selectedScene ? <EmptyState title="未选择场景" description="从左侧选择场景，或新增一条。" /> : <div>
+    <Card title="当前场景详情" className="scene-detail-card" bodyStyle={{ padding: 16 }}>
+      {!selectedScene ? <EmptyState title="未选择场景" description="从场景列表选择场景，或新增一条。" action={<Button theme="solid" type="primary" icon={<IconPlus />} onClick={onCreateScene}>新增场景</Button>} /> : <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
           <div>
             <Title heading={5} style={{ margin: 0 }}>{selectedScene.title || `场景 #${selectedScene.orderIndex}`}</Title>
@@ -707,14 +791,16 @@ function WritingFlowPanel({ loading, scenes, allScenes, profiles, selectedScene,
           </Space>
         </div>
 
-        <Space style={{ marginBottom: 14 }} wrap>
-          {sceneTabs.map((tab) => <Button key={tab} size="small" theme={sceneTab === tab ? 'solid' : 'borderless'} type={sceneTab === tab ? 'primary' : 'tertiary'} onClick={() => setSceneTab(tab)}>{sceneTabLabel(tab)}</Button>)}
-        </Space>
+        <div role="tablist" aria-label="场景详情" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          {sceneTabs.map((tab) => <Button key={tab} id={`scene-tab-${tab}`} role="tab" aria-selected={sceneTab === tab} aria-controls={`scene-panel-${tab}`} size="small" theme={sceneTab === tab ? 'solid' : 'borderless'} type={sceneTab === tab ? 'primary' : 'tertiary'} onClick={() => setSceneTab(tab)}>{sceneTabLabel(tab)}</Button>)}
+        </div>
 
+        <div id={`scene-panel-${sceneTab}`} role="tabpanel" aria-labelledby={`scene-tab-${sceneTab}`}>
         {sceneTab === 'plan' ? <ScenePlanPanel plans={plans} currentPlanId={selectedScene.currentPlanId} onCreate={() => onCreateResource('plan')} onEdit={(item) => onEditResource('plan', item)} onDelete={(item) => onDeleteResource('plan', item)} onActivate={(item) => onActivateResource('plan', item)} /> : null}
         {sceneTab === 'version' ? <SceneVersionPanel versions={versions} currentVersionId={selectedScene.currentVersionId} onCreate={() => onCreateResource('version')} onEdit={(item) => onEditResource('version', item)} onDelete={(item) => onDeleteResource('version', item)} onActivate={(item) => onActivateResource('version', item)} /> : null}
         {sceneTab === 'summary' ? <SceneSummaryPanel summaries={summaries} onCreate={() => onCreateResource('summary')} onEdit={(item) => onEditResource('summary', item)} onDelete={(item) => onDeleteResource('summary', item)} onLifecycle={(item, action) => onLifecycle('summary', item, action)} /> : null}
         {sceneTab === 'handoff' ? <SceneHandoffPanel handoffs={handoffs} onCreate={() => onCreateResource('handoff')} onEdit={(item) => onEditResource('handoff', item)} onDelete={(item) => onDeleteResource('handoff', item)} onLifecycle={(item, action) => onLifecycle('handoff', item, action)} /> : null}
+        </div>
       </div>}
     </Card>
   </div>;
@@ -817,8 +903,8 @@ function BodyPanel({ content, setContent, changeSummary, setChangeSummary, saveA
         <Checkbox checked={includeSceneTitles} onChange={(event) => setIncludeSceneTitles(Boolean(event.target.checked))}>包含场景标题</Checkbox>
         <Checkbox checked={assembleActivate} onChange={(event) => setAssembleActivate(Boolean(event.target.checked))}>装配后设为当前章节正文</Checkbox>
       </Space>
-      <Button theme="solid" type="primary" loading={assembling} disabled={hardBlockerCount > 0} onClick={onAssemble}>装配章节正文</Button>
-      {hardBlockerCount > 0 ? <Text type="warning" style={{ marginLeft: 12 }}>还有 {hardBlockerCount} 个硬阻塞未处理</Text> : null}
+      <Button theme="solid" type="primary" loading={assembling} disabled={hardBlockerCount > 0} aria-describedby={hardBlockerCount > 0 ? 'chapter-assemble-disabled-reason' : undefined} onClick={onAssemble}>装配章节正文</Button>
+      {hardBlockerCount > 0 ? <Text id="chapter-assemble-disabled-reason" type="warning" style={{ marginLeft: 12 }}>还有 {hardBlockerCount} 个硬阻塞未处理，处理后才能装配。</Text> : null}
     </Card>
     <div style={{ display: 'grid', gap: 12 }}>
       <Space wrap spacing={8}>
@@ -826,8 +912,16 @@ function BodyPanel({ content, setContent, changeSummary, setChangeSummary, saveA
         {currentVersion ? <Text type="tertiary">当前章节正文：{shortId(currentVersion.id)} · {formatDate(currentVersion.updatedAt || currentVersion.createdAt)}</Text> : <Text type="tertiary">暂无当前章节正文，可直接编辑并保存为版本。</Text>}
       </Space>
       <Text type="tertiary">这里是写作优先的大编辑区。保存会生成新的章节正文版本，不会覆盖历史版本。</Text>
-      <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="这里是读者最终看到的章节正文。保存会生成新的章节版本，不会覆盖历史版本。" style={textareaStyle('50vh')} />
-      <input value={changeSummary} onChange={(event) => setChangeSummary(event.target.value)} placeholder="版本说明（可选）" style={inputStyle} />
+      <div>
+        <label htmlFor="chapter-body-content" style={fieldLabelStyle}>章节正文</label>
+        <Text id="chapter-body-content-help" type="tertiary" size="small" style={{ display: 'block', marginBottom: 6 }}>这里是读者最终看到的章节正文。保存会生成新的章节版本，不会覆盖历史版本。</Text>
+        <textarea id="chapter-body-content" value={content} onChange={(event) => setContent(event.target.value)} aria-describedby="chapter-body-content-help" style={textareaStyle('50vh')} />
+      </div>
+      <div>
+        <label htmlFor="chapter-version-summary" style={fieldLabelStyle}>版本说明（可选）</label>
+        <Text id="chapter-version-summary-help" type="tertiary" size="small" style={{ display: 'block', marginBottom: 6 }}>简要说明这次保存的改动，便于之后区分版本。</Text>
+        <input id="chapter-version-summary" value={changeSummary} onChange={(event) => setChangeSummary(event.target.value)} aria-describedby="chapter-version-summary-help" style={inputStyle} />
+      </div>
       <Space style={{ justifyContent: 'space-between' }}>
         <Checkbox checked={saveAndActivate} onChange={(event) => setSaveAndActivate(Boolean(event.target.checked))}>保存后设为当前章节正文</Checkbox>
         <Button theme="solid" type="primary" loading={saving} onClick={onSave}>保存为新章节版本</Button>
@@ -864,8 +958,8 @@ function OverviewPanel({ chapter, profile, progress, onAssemble, includeSceneTit
         <Checkbox checked={assembleActivate} onChange={(event) => setAssembleActivate(Boolean(event.target.checked))}>装配后设为当前章节正文</Checkbox>
       </Space>
       <Space wrap>
-        <Button theme="solid" type="primary" loading={assembling} disabled={(progress?.hardBlockers.length ?? 0) > 0} onClick={onAssemble}>从场景装配</Button>
-        <Text type={(progress?.hardBlockers.length ?? 0) > 0 ? 'warning' : 'tertiary'}>场景数：{progress?.sceneCount ?? 0}；{(progress?.hardBlockers.length ?? 0) > 0 ? '存在硬阻塞' : '可装配'}</Text>
+        <Button theme="solid" type="primary" loading={assembling} disabled={(progress?.hardBlockers.length ?? 0) > 0} aria-describedby={(progress?.hardBlockers.length ?? 0) > 0 ? 'chapter-overview-assemble-disabled-reason' : undefined} onClick={onAssemble}>从场景装配</Button>
+        <Text id={(progress?.hardBlockers.length ?? 0) > 0 ? 'chapter-overview-assemble-disabled-reason' : undefined} type={(progress?.hardBlockers.length ?? 0) > 0 ? 'warning' : 'tertiary'}>场景数：{progress?.sceneCount ?? 0}；{(progress?.hardBlockers.length ?? 0) > 0 ? '存在硬阻塞，处理后才能装配' : '可装配'}</Text>
       </Space>
     </Card>
   </div>;
@@ -939,9 +1033,9 @@ function SummariesPanel({ summaries, currentSummary, currentVersionId, rollingUp
   </div>;
 }
 
-function ContextPanel({ chapter, profile, progress, onIssueClick, onCreateScene, onAssemble, onRollup }: { chapter?: Chapter; profile?: ChapterProfile; progress?: SceneProgress; onIssueClick: (issue: WritingIssue) => void; onCreateScene: () => void; onAssemble: () => void; onRollup: () => void }) {
+function ContextPanel({ chapter, profile, progress, onIssueClick, onSuggestionClick }: { chapter?: Chapter; profile?: ChapterProfile; progress?: SceneProgress; onIssueClick: (issue: WritingIssue) => void; onSuggestionClick: (item: NextSuggestion) => void }) {
   const next = nextSuggestions(chapter, profile, progress);
-  return <Card title="上下文 / 下一步" style={{ borderRadius: 12, minHeight: 560 }} bodyStyle={{ padding: 12 }}>
+  return <Card title="上下文 / 下一步" className="chapter-workspace__context" bodyStyle={{ padding: 12 }}>
     {!chapter ? <EmptyState title="未选择章节" description="选择章节后查看目标、阻塞和下一步。" /> : <div style={{ display: 'grid', gap: 14 }}>
       <section>
         <Text strong>本章目标</Text>
@@ -958,11 +1052,7 @@ function ContextPanel({ chapter, profile, progress, onIssueClick, onCreateScene,
       <section>
         <Text strong>下一步建议</Text>
         <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          {next.map((item) => <Button key={item} onClick={() => {
-            if (item.includes('添加')) onCreateScene();
-            else if (item.includes('装配')) onAssemble();
-            else if (item.includes('汇总')) onRollup();
-          }}>{item}</Button>)}
+          {next.map((item) => <Button key={item.label} onClick={() => onSuggestionClick(item)}>{item.label}</Button>)}
         </div>
       </section>
     </div>}
@@ -976,9 +1066,9 @@ function IssueList({ issues, empty, onClick, color }: { issues: WritingIssue[]; 
   </div>;
 }
 
-function SceneResourceForm({ editing, formApiSetter, currentVersionId, sceneVersionOptions, sceneOptions }: { editing: EditingSceneResourceState; formApiSetter: (api: FormApi) => void; currentVersionId?: string | null; sceneVersionOptions: SelectOption[]; sceneOptions: SelectOption[] }) {
+function SceneResourceForm({ editing, formApiSetter, currentVersionId, sceneVersionOptions, sceneOptions, onDirty }: { editing: EditingSceneResourceState; formApiSetter: (api: FormApi) => void; currentVersionId?: string | null; sceneVersionOptions: SelectOption[]; sceneOptions: SelectOption[]; onDirty: () => void }) {
   const values = resourceInitialValues(editing, currentVersionId);
-  return <Form key={`${editing.kind}:${editing.mode}:${editing.mode === 'edit' ? editing.item.id : 'new'}`} initValues={values} getFormApi={formApiSetter} labelPosition="top">
+  return <Form key={`${editing.kind}:${editing.mode}:${editing.mode === 'edit' ? editing.item.id : 'new'}`} initValues={values} getFormApi={formApiSetter} labelPosition="top" onValueChange={onDirty}>
     {editing.kind === 'plan' ? <>
       <Form.Input field="title" label="标题" />
       <Form.TextArea field="goal" label="目标" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
@@ -1002,19 +1092,19 @@ function SceneResourceForm({ editing, formApiSetter, currentVersionId, sceneVers
     {editing.kind === 'summary' ? <>
       <Form.Select field="sceneVersionId" label="关联正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
       <Form.TextArea field="summary" label="摘要" rules={[{ required: true, message: '请填写摘要' }]} autosize={{ minRows: 6, maxRows: 14 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="keyEventsText" label="关键事件（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="characterChangesText" label="人物变化（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="newFactsText" label="新增事实（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="keyEventsText" label="关键事件" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="characterChangesText" label="人物变化" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="newFactsText" label="新增事实" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
       <Text type="tertiary" size="small">这条摘要确认前，不会作为可靠上下文使用。</Text>
     </> : null}
     {editing.kind === 'handoff' ? <>
       <Form.Select field="sceneVersionId" label="关联正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
       <Form.Select field="nextSceneId" label="指向下一场" showClear style={{ width: '100%' }}>{sceneOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
-      <Form.TextArea field="readerKnowsText" label="读者已知信息（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="actualChangesText" label="实际变化（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="openQuestionsText" label="未解问题（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="nextSceneMustText" label="下一场必须处理（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
-      <Form.TextArea field="riskNotesText" label="风险备注（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="readerKnowsText" label="读者已知信息" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="actualChangesText" label="实际变化" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="openQuestionsText" label="未解问题" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="nextSceneMustText" label="下一场必须处理" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="riskNotesText" label="风险备注" extraText="可以每行写一条，也可以粘贴 JSON。" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
       <Text type="tertiary" size="small">这条交接确认前，不会作为可靠上下文使用。</Text>
     </> : null}
   </Form>;
@@ -1024,8 +1114,11 @@ function SheetFooter({ onCancel, onSave, saving }: { onCancel: () => void; onSav
   return <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={onCancel}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={onSave}>保存</Button></div>;
 }
 
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return <Empty title={title} description={description} image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} />;
+function EmptyState({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
+  return <div style={{ display: 'grid', justifyItems: 'center', gap: 12 }}>
+    <Empty title={title} description={description} image={<IllustrationNoContent style={{ width: 120, height: 120 }} />} darkModeImage={<IllustrationNoContentDark style={{ width: 120, height: 120 }} />} />
+    {action}
+  </div>;
 }
 
 function InfoTag({ label, value }: { label: string; value: unknown }) {
@@ -1142,7 +1235,7 @@ function normalizeSceneInput(values: Record<string, unknown>): SceneInput {
 function normalizeSummaryInput(values: Record<string, unknown>): ChapterSummaryInput {
   const summary = normalizeString(values.summary);
   if (!summary) throw new Error('请填写章节摘要');
-  const input: ChapterSummaryInput = { summary, chapterVersionId: normalizeString(values.chapterVersionId), keyEvents: parseOptionalJson(values.keyEventsText, '关键事件 JSON'), characterChanges: parseOptionalJson(values.characterChangesText, '人物变化 JSON'), newFacts: parseOptionalJson(values.newFactsText, '新增事实 JSON'), createdBy: 'user' };
+  const input: ChapterSummaryInput = { summary, chapterVersionId: normalizeString(values.chapterVersionId), keyEvents: parseStructuredField(values.keyEventsText), characterChanges: parseStructuredField(values.characterChangesText), newFacts: parseStructuredField(values.newFactsText), createdBy: 'user' };
   stripUndefined(input);
   return input;
 }
@@ -1166,20 +1259,20 @@ function resourceInitialValues(editing: EditingSceneResourceState, currentVersio
   return item;
 }
 
-function nextSuggestions(chapter?: Chapter, profile?: ChapterProfile, progress?: SceneProgress) {
-  if (!chapter) return ['新增章节'];
-  if (!progress || progress.sceneCount === 0) return ['添加场景'];
+function nextSuggestions(chapter?: Chapter, profile?: ChapterProfile, progress?: SceneProgress): NextSuggestion[] {
+  if (!chapter) return [{ kind: 'createScene', label: '新增章节' }];
+  if (!progress || progress.sceneCount === 0) return [{ kind: 'createScene', label: '添加场景' }];
   const missingPlan = progress.scenes.find((scene) => !scene.currentPlanId);
-  if (missingPlan) return [`补场景计划：#${missingPlan.orderIndex}`];
+  if (missingPlan) return [{ kind: 'sceneTask', label: `补场景计划：#${missingPlan.orderIndex}`, sceneId: missingPlan.id, sceneTab: 'plan' }];
   const missingBody = progress.scenes.find((scene) => !scene.currentVersionId || !progress.profiles[scene.id]?.currentVersion);
-  if (missingBody) return [`写正文：#${missingBody.orderIndex}`];
+  if (missingBody) return [{ kind: 'sceneTask', label: `写正文：#${missingBody.orderIndex}`, sceneId: missingBody.id, sceneTab: 'version' }];
   const missingSummary = progress.scenes.find((scene) => !progress.profiles[scene.id]?.latestSummary);
-  if (missingSummary) return [`确认摘要：#${missingSummary.orderIndex}`];
+  if (missingSummary) return [{ kind: 'sceneTask', label: `确认摘要：#${missingSummary.orderIndex}`, sceneId: missingSummary.id, sceneTab: 'summary' }];
   const missingHandoff = progress.scenes.find((scene) => !progress.profiles[scene.id]?.latestHandoff);
-  if (missingHandoff) return [`补交接：#${missingHandoff.orderIndex}`];
-  if (!chapter.currentVersionId) return ['装配章节正文'];
-  if (!profile?.currentSummary) return ['汇总章节摘要'];
-  return ['本章完成，进入下一章'];
+  if (missingHandoff) return [{ kind: 'sceneTask', label: `补交接：#${missingHandoff.orderIndex}`, sceneId: missingHandoff.id, sceneTab: 'handoff' }];
+  if (!chapter.currentVersionId) return [{ kind: 'assembleChapter', label: '装配章节正文' }];
+  if (!profile?.currentSummary) return [{ kind: 'rollupSummary', label: '汇总章节摘要' }];
+  return [{ kind: 'chapterComplete', label: '本章完成，进入下一章' }];
 }
 
 function normalizeNullableFields(values: Record<string, unknown>, fields: string[]) {
@@ -1192,12 +1285,6 @@ function normalizeString(value: unknown): string | null | undefined {
   if (typeof value !== 'string') return String(value);
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function parseOptionalJson(value: unknown, label: string) {
-  const text = normalizeString(value);
-  if (!text) return undefined;
-  try { return JSON.parse(text); } catch { throw new Error(`${label} 格式不合法`); }
 }
 
 function parseStructuredField(value: unknown) {
@@ -1299,4 +1386,5 @@ function textareaStyle(minHeight: number | string): React.CSSProperties {
 const writingTextareaStyle: React.CSSProperties = { minHeight: '52vh', lineHeight: 1.8, fontSize: 15 };
 const longTextareaStyle: React.CSSProperties = { minHeight: 140, lineHeight: 1.7 };
 
+const fieldLabelStyle: React.CSSProperties = { display: 'block', marginBottom: 4, fontWeight: 600, color: 'var(--semi-color-text-0)' };
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid var(--semi-color-border)', borderRadius: 8, color: 'var(--semi-color-text-0)', background: 'var(--semi-color-bg-0)' };

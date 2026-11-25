@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '@douyinfe/semi-ui/dist/css/semi.min.css';
+import './app/app.css';
 import { AppProviders } from './app/providers/AppProviders';
 import { App } from './app/App';
 
