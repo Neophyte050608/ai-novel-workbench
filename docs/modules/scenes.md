@@ -47,6 +47,33 @@ Scene 模块用于解决：
 
 ---
 
+
+### 1.1 与章节写作工作台的关系
+
+Scene 是章节内的创作颗粒度，但日常写作主入口应是 `Chapter Writing Workspace / 章节写作工作台`。
+
+作者写第 N 章时，应在章节上下文内完成：
+
+```txt
+本章场景列表
+  -> 场景计划
+  -> 场景正文版本
+  -> 场景摘要
+  -> 场景交接
+  -> 装配章节正文
+```
+
+独立 SceneWorkspace 保留，但定位调整为“场景库”：
+
+```txt
+跨章节检索
+批量维护
+结构健康检查
+跨章 handoff / 连续性视图
+```
+
+它不应再作为作者日常写一章时必须进入的主入口。详细产品设计见：[`docs/modules/chapter-writing-workspace.md`](./chapter-writing-workspace.md)。
+
 ## 2. 长篇创作方法论
 
 ### 2.1 三条链模型

@@ -9,6 +9,31 @@
 - **SceneVersion**：内部创作颗粒度的场景正文版本。P1 支持把同一 Chapter 下各 Scene 的当前 SceneVersion 按顺序拼接，生成一个 ChapterVersion。
 - **ChapterSummary**：章节级摘要。P1 支持人工维护和从已确认 SceneSummary 汇总，服务章节工作台查看与后续人工整理；它不是长期小说记忆 `MemoryRecord`，P1 不写入 MemoryRecord / EvidenceRef。
 
+
+## Chapter Writing Workspace
+
+`Chapter Writing Workspace / 章节写作工作台` 是 Chapters 能力的主要产品入口。
+
+Chapters 模块负责领域模型：
+
+```txt
+Chapter -> ChapterVersion -> ChapterSummary
+```
+
+章节写作工作台负责作者流程：
+
+```txt
+选中第 N 章
+  -> 管理本章场景
+  -> 写场景正文 / 摘要 / 交接
+  -> 装配章节正文
+  -> 确认章节摘要
+```
+
+因此，日常写作不应要求用户在章节页和场景页之间来回跳。独立 SceneWorkspace 保留为“场景库 / 全局管理 / 检索 / 批量维护”，而不是写一章时的必经入口。
+
+详细产品设计见：[`docs/modules/chapter-writing-workspace.md`](./chapter-writing-workspace.md)。
+
 ## 核心实体
 
 - Chapter

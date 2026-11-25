@@ -21,6 +21,7 @@ P0 运行环境与规范
   -> P1 世界观
   -> P1 大纲规划
   -> P1 章节正文与版本
+  -> P1 章节写作工作台
   -> P1 Context Builder
   -> P1 Prompt 管理
   -> P1 LLM Provider 模型接入层
@@ -334,6 +335,51 @@ P0 运行环境与规范
 
 ---
 
+# P1：章节写作工作台 / Chapter Writing Workspace
+
+## 职责
+
+把章节、场景、场景正文、场景摘要、场景交接、章节正文装配和章节摘要收敛到同一个章节上下文里，成为作者日常写一章的主入口。
+
+`ChapterWorkspace` 负责“我今天怎么把这一章写完”。独立 `SceneWorkspace` 保留为“场景库”，负责跨章节检索、批量维护和结构健康检查。
+
+## 开发规则
+
+1. P1 优先 UI / 流程收敛，尽量不改 schema。
+2. 日常写作必须能在章节页内完成，不要求用户跳到独立场景页。
+3. 场景计划、正文、摘要、交接仍使用 Scene 模块 API，不复制业务规则。
+4. 章节正文仍写入 ChapterVersion，不直接覆盖 Chapter。
+5. 装配硬阻塞和软提醒必须分开：缺当前场景正文阻止装配；缺摘要/交接只提醒。
+6. SceneSummary / SceneHandoff 必须能确认、归档、恢复，否则后续 Context Builder 无可靠输入。
+7. P1 不显示 AI 自动生成按钮，不做 PromptRender、ContextBuilder、模型接入、富文本、多人协作或发布平台。
+8. 独立 SceneWorkspace 文案应调整为“场景库 / 全局场景管理”，不再暗示它是写一章的必经入口。
+
+## 任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| CWW-DOC-1 | 章节写作工作台设计文档 | 已做 | `docs/modules/chapter-writing-workspace.md` 存在，明确定位、布局、写作流、阻塞清单、AI 后续链路和 P1/P2/P3 |
+| CWW-TASK-1 | 任务拆分 | 已做 | `task-breakdown.md` 包含章节写作工作台职责、边界、任务与验收 |
+| CWW-UI-1 | ChapterWorkspace 定位与导航文案 | 待做 | 页面命名/副标题体现“章节写作”，空状态不再提示去场景工作台；SceneWorkspace 改为“场景库”定位 |
+| CWW-UI-2 | 写作流 Tab | 待做 | 章节详情默认进入“写作流”，展示本章场景列表和当前场景详情 |
+| CWW-UI-3 | 场景详情内嵌 | 待做 | 不离开章节页即可新增/编辑场景基础信息、ScenePlan、SceneVersion、SceneSummary、SceneHandoff |
+| CWW-UI-4 | SceneSummary / SceneHandoff 确认能力 | 待做 | 在章节工作台内可 confirm/archive/restore/delete 场景摘要和交接；未 confirmed 明确提示不会作为可靠上下文 |
+| CWW-UI-5 | 装配阻塞清单 | 待做 | 展示本章硬阻塞和软提醒；点击可定位到对应场景与处理 Tab |
+| CWW-UI-6 | 下一步建议 | 待做 | 根据章节/场景状态推荐“添加场景/写正文/确认摘要/补交接/装配正文/汇总摘要”等下一步 |
+| CWW-UI-7 | 章节正文与摘要入口收敛 | 待做 | 章节正文、版本记录、章节摘要仍可用，并能从写作流顺畅进入装配/汇总 |
+| CWW-QA-1 | 章节写作闭环验收 | 待做 | 用户在第 N 章内无需切换到独立 Scene 模块，即可完成建场景、写场景、激活正文、确认摘要/交接、装配 ChapterVersion、汇总 ChapterSummary |
+
+## P2 后置任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| CWW-P2-1 | Scene-aware Context Builder | 后置 | 生成单场正文时可读取当前 ScenePlan、前序 SceneSummary/Handoff 和相关资产 |
+| CWW-P2-2 | AI 生成场景计划/正文/摘要/交接 | 后置 | AI 输出分别落入 ScenePlan、SceneVersion、SceneSummary、SceneHandoff，并由用户确认 current/canon 指针 |
+| CWW-P2-3 | ChapterVersionSceneVersion 追溯 | 后置 | ChapterVersion 可追溯由哪些 SceneVersion 装配 |
+| CWW-P2-4 | 版本 diff / 重写 | 后置 | 可比较章节版本、场景版本并局部重写 |
+
+---
+
 # P1：Context Builder
 
 ## 职责
@@ -531,14 +577,14 @@ Scene 是叙事结构线、故事资产线、读者体验线的交汇点，不�
 | SCENE-TASK-1 | Scene 任务拆分 | 已做 | `task-breakdown.md` 包含 Scene 模块职责、规则、任务、验收标准 |
 | SCENE-SCHEMA-1 | P1 schema 与 migration | 已做 | schema 覆盖 Scene / ScenePlan / SceneVersion / SceneSummary / SceneHandoff，并已生成 create-only migration |
 | SCENE-SCHEMA-2 | schema 审查 | 已做 | 已复核 projectId/chapterId/source/canonStatus/deletedAt/index/relation 边界，无阻塞项 |
-| SCENE-API-1 | Scene 基础 API | 待做 | list/create/detail/patch/delete/reorder/confirm/archive/restore 边界清晰 |
-| SCENE-API-2 | ScenePlan API | 待做 | plans list/create/update/delete/activate，activate 校验同 scene 且未软删除 |
-| SCENE-API-3 | SceneVersion API | 待做 | versions list/create/update/delete/activate，正文版本不直接覆盖 Scene |
-| SCENE-API-4 | SceneSummary API | 待做 | summaries CRUD，默认只读未删除记录，confirmed 才进入上下文 |
-| SCENE-API-5 | SceneHandoff API | 待做 | handoffs CRUD，固定七类字段，confirmed 才进入下一场上下文 |
-| SCENE-API-6 | Scene profile/readiness | 待做 | profile 聚合 scene/currentPlan/currentVersion/latestSummary/latestHandoff/pov/location/readiness |
-| SCENE-UI-1 | 章节内 Scene 轻 UI | 待做 | 可查看场景列表与基础详情，不展示未实现 AI 生成按钮 |
-| SCENE-QA-1 | 边界测试 | 待做 | 覆盖 project 边界、软删除、activate、reorder、PATCH 不深改、跨 chapter 拒绝 |
+| SCENE-API-1 | Scene 基础 API | 已做 | list/create/detail/patch/delete/reorder/confirm/archive/restore 边界清晰 |
+| SCENE-API-2 | ScenePlan API | 已做 | plans list/create/update/delete/activate，activate 校验同 scene 且未软删除 |
+| SCENE-API-3 | SceneVersion API | 已做 | versions list/create/update/delete/activate，正文版本不直接覆盖 Scene |
+| SCENE-API-4 | SceneSummary API | 已做 | summaries CRUD，默认只读未删除记录，confirmed 才进入上下文 |
+| SCENE-API-5 | SceneHandoff API | 已做 | handoffs CRUD，固定七类字段，confirmed 才进入下一场上下文 |
+| SCENE-API-6 | Scene profile/readiness | 已做 | profile 聚合 scene/currentPlan/currentVersion/latestSummary/latestHandoff/pov/location/readiness |
+| SCENE-UI-1 | Scene 轻 UI | 已做 | 可按章节查看场景列表、场景详情、计划、正文版本、摘要与交接；不展示未实现 AI 生成按钮 |
+| SCENE-QA-1 | 边界测试 | 已做 | 覆盖 project 边界、软删除、activate、reorder、PATCH 不深改、跨 chapter 拒绝 |
 
 ## P2 后置任务
 
