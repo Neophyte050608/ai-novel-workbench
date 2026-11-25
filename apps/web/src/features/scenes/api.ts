@@ -129,6 +129,18 @@ export function deleteSceneSummary(projectId: string, summaryId: string) {
   return apiDelete<SceneSummary>(`/projects/${projectId}/scene-summaries/${summaryId}`);
 }
 
+export function confirmSceneSummary(projectId: string, summaryId: string) {
+  return apiPost<SceneSummary>(`/projects/${projectId}/scene-summaries/${summaryId}/confirm`, {});
+}
+
+export function archiveSceneSummary(projectId: string, summaryId: string) {
+  return apiPost<SceneSummary>(`/projects/${projectId}/scene-summaries/${summaryId}/archive`, {});
+}
+
+export function restoreSceneSummary(projectId: string, summaryId: string) {
+  return apiPost<SceneSummary>(`/projects/${projectId}/scene-summaries/${summaryId}/restore`, {});
+}
+
 export function listSceneHandoffs(projectId: string, sceneId: string) {
   return apiGet<SceneHandoff[]>(`/projects/${projectId}/scenes/${sceneId}/handoffs`);
 }
@@ -149,4 +161,16 @@ export function updateSceneHandoff(projectId: string, handoffId: string, input: 
 
 export function deleteSceneHandoff(projectId: string, handoffId: string) {
   return apiDelete<SceneHandoff>(`/projects/${projectId}/scene-handoffs/${handoffId}`);
+}
+
+export function confirmSceneHandoff(projectId: string, handoffId: string) {
+  return apiPost<SceneHandoff>(`/projects/${projectId}/scene-handoffs/${handoffId}/confirm`, {});
+}
+
+export function archiveSceneHandoff(projectId: string, handoffId: string) {
+  return apiPost<SceneHandoff>(`/projects/${projectId}/scene-handoffs/${handoffId}/archive`, {});
+}
+
+export function restoreSceneHandoff(projectId: string, handoffId: string) {
+  return apiPost<SceneHandoff>(`/projects/${projectId}/scene-handoffs/${handoffId}/restore`, {});
 }

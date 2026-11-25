@@ -405,8 +405,8 @@ export function SceneWorkspace({ projectId }: { projectId: string }) {
   return <div>
     <section style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 16 }}>
       <div>
-        <Title heading={3} style={{ margin: 0 }}>场景</Title>
-        <Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>按章节管理场景档案、计划、正文版本、摘要与交接。</Text>
+        <Title heading={3} style={{ margin: 0 }}>场景库</Title>
+        <Text type="tertiary" style={{ display: 'block', marginTop: 6 }}>跨章节检索与批量维护场景；日常写作请从“章节写作”进入，在章节上下文内完成场景写作闭环。</Text>
       </div>
       <Space>
         <Button theme="solid" type="primary" icon={<IconPlus />} onClick={openCreateScene} disabled={!appliedChapterId}>新增场景</Button>

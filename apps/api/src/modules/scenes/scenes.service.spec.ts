@@ -248,6 +248,40 @@ async function testActivateTrimsIds() {
   assert.equal(withVersion.currentVersionId, version.id);
 }
 
+async function testSummaryLifecycleActions() {
+  const { prisma } = createPrismaStub();
+  const service = new ScenesService(prisma as any);
+  const scene = await service.createScene('project-1', 'chapter-1', { title: '一' });
+  const summary = await service.createSummary('project-1', scene.id, { summary: '摘要' });
+
+  const confirmed = await service.confirmSummary('project-1', summary.id);
+  assert.equal(confirmed.canonStatus, 'confirmed');
+
+  const archived = await service.archiveSummary('project-1', summary.id);
+  assert.equal(archived.canonStatus, 'archived');
+
+  const restored = await service.restoreSummary('project-1', summary.id);
+  assert.equal(restored.deletedAt, null);
+  assert.equal(restored.canonStatus, 'draft');
+}
+
+async function testHandoffLifecycleActions() {
+  const { prisma } = createPrismaStub();
+  const service = new ScenesService(prisma as any);
+  const scene = await service.createScene('project-1', 'chapter-1', { title: '一' });
+  const handoff = await service.createHandoff('project-1', scene.id, { createdBy: 'me' });
+
+  const confirmed = await service.confirmHandoff('project-1', handoff.id);
+  assert.equal(confirmed.canonStatus, 'confirmed');
+
+  const archived = await service.archiveHandoff('project-1', handoff.id);
+  assert.equal(archived.canonStatus, 'archived');
+
+  const restored = await service.restoreHandoff('project-1', handoff.id);
+  assert.equal(restored.deletedAt, null);
+  assert.equal(restored.canonStatus, 'draft');
+}
+
 async function run() {
   await testChildReadsRejectSoftDeletedParentScene();
   await testActivatePlanRequiresSameScene();
@@ -259,6 +293,8 @@ async function run() {
   await testReorderRejectsSubset();
   await testProfileUsesConfirmedContextOnly();
   await testActivateTrimsIds();
+  await testSummaryLifecycleActions();
+  await testHandoffLifecycleActions();
   console.log('scenes service behavior tests passed');
 }
 

@@ -146,6 +146,21 @@ export class ScenesController {
     return this.scenes.updateSummary(projectId, summaryId, dto);
   }
 
+  @Post('scene-summaries/:summaryId/confirm')
+  confirmSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.scenes.confirmSummary(projectId, summaryId);
+  }
+
+  @Post('scene-summaries/:summaryId/archive')
+  archiveSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.scenes.archiveSummary(projectId, summaryId);
+  }
+
+  @Post('scene-summaries/:summaryId/restore')
+  restoreSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
+    return this.scenes.restoreSummary(projectId, summaryId);
+  }
+
   @Delete('scene-summaries/:summaryId')
   deleteSummary(@Param('projectId') projectId: string, @Param('summaryId') summaryId: string) {
     return this.scenes.deleteSummary(projectId, summaryId);
@@ -169,6 +184,21 @@ export class ScenesController {
   @Patch('scene-handoffs/:handoffId')
   updateHandoff(@Param('projectId') projectId: string, @Param('handoffId') handoffId: string, @Body() dto: UpdateSceneHandoffDto) {
     return this.scenes.updateHandoff(projectId, handoffId, dto);
+  }
+
+  @Post('scene-handoffs/:handoffId/confirm')
+  confirmHandoff(@Param('projectId') projectId: string, @Param('handoffId') handoffId: string) {
+    return this.scenes.confirmHandoff(projectId, handoffId);
+  }
+
+  @Post('scene-handoffs/:handoffId/archive')
+  archiveHandoff(@Param('projectId') projectId: string, @Param('handoffId') handoffId: string) {
+    return this.scenes.archiveHandoff(projectId, handoffId);
+  }
+
+  @Post('scene-handoffs/:handoffId/restore')
+  restoreHandoff(@Param('projectId') projectId: string, @Param('handoffId') handoffId: string) {
+    return this.scenes.restoreHandoff(projectId, handoffId);
   }
 
   @Delete('scene-handoffs/:handoffId')

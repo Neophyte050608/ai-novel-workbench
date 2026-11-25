@@ -360,14 +360,14 @@ P0 运行环境与规范
 |---|---|---|---|
 | CWW-DOC-1 | 章节写作工作台设计文档 | 已做 | `docs/modules/chapter-writing-workspace.md` 存在，明确定位、布局、写作流、阻塞清单、AI 后续链路和 P1/P2/P3 |
 | CWW-TASK-1 | 任务拆分 | 已做 | `task-breakdown.md` 包含章节写作工作台职责、边界、任务与验收 |
-| CWW-UI-1 | ChapterWorkspace 定位与导航文案 | 待做 | 页面命名/副标题体现“章节写作”，空状态不再提示去场景工作台；SceneWorkspace 改为“场景库”定位 |
-| CWW-UI-2 | 写作流 Tab | 待做 | 章节详情默认进入“写作流”，展示本章场景列表和当前场景详情 |
-| CWW-UI-3 | 场景详情内嵌 | 待做 | 不离开章节页即可新增/编辑场景基础信息、ScenePlan、SceneVersion、SceneSummary、SceneHandoff |
-| CWW-UI-4 | SceneSummary / SceneHandoff 确认能力 | 待做 | 在章节工作台内可 confirm/archive/restore/delete 场景摘要和交接；未 confirmed 明确提示不会作为可靠上下文 |
-| CWW-UI-5 | 装配阻塞清单 | 待做 | 展示本章硬阻塞和软提醒；点击可定位到对应场景与处理 Tab |
-| CWW-UI-6 | 下一步建议 | 待做 | 根据章节/场景状态推荐“添加场景/写正文/确认摘要/补交接/装配正文/汇总摘要”等下一步 |
-| CWW-UI-7 | 章节正文与摘要入口收敛 | 待做 | 章节正文、版本记录、章节摘要仍可用，并能从写作流顺畅进入装配/汇总 |
-| CWW-QA-1 | 章节写作闭环验收 | 待做 | 用户在第 N 章内无需切换到独立 Scene 模块，即可完成建场景、写场景、激活正文、确认摘要/交接、装配 ChapterVersion、汇总 ChapterSummary |
+| CWW-UI-1 | ChapterWorkspace 定位与导航文案 | 已做 | 页面命名/副标题体现“章节写作”，空状态不再提示去场景工作台；SceneWorkspace 改为“场景库”定位 |
+| CWW-UI-2 | 写作流 Tab | 已做 | 章节详情默认进入“写作流”，展示本章场景列表和当前场景详情 |
+| CWW-UI-3 | 场景详情内嵌 | 已做 | 不离开章节页即可新增/编辑场景基础信息、ScenePlan、SceneVersion、SceneSummary、SceneHandoff |
+| CWW-UI-4 | SceneSummary / SceneHandoff 确认能力 | 已做 | 在章节工作台内可 confirm/archive/restore/delete 场景摘要和交接；未 confirmed 明确提示不会作为可靠上下文 |
+| CWW-UI-5 | 装配阻塞清单 | 已做 | 展示本章硬阻塞和软提醒；点击可定位到对应场景与处理 Tab |
+| CWW-UI-6 | 下一步建议 | 已做 | 根据章节/场景状态推荐“添加场景/写正文/确认摘要/补交接/装配正文/汇总摘要”等下一步 |
+| CWW-UI-7 | 章节正文与摘要入口收敛 | 已做 | 章节正文、版本记录、章节摘要仍可用，并能从写作流顺畅进入装配/汇总 |
+| CWW-QA-1 | 章节写作闭环验收 | 已做 | 用户在第 N 章内无需切换到独立 Scene 模块，即可完成建场景、写场景、激活正文、确认摘要/交接、装配 ChapterVersion、汇总 ChapterSummary |
 
 ## P2 后置任务
 

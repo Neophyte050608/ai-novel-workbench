@@ -1,6 +1,6 @@
 # Chapter Writing Workspace / 章节写作工作台
 
-> 状态：设计稿 v0.1 approved direction  
+> 状态：P1 implemented
 > 日期：2026-11-25  
 > 范围：章节内日常写作主入口、场景写作闭环、章节正文装配与摘要确认  
 > 不包含：AI 模型接入实现、PromptRender / ContextBuilder 实现、富文本编辑器、多人协作、发布平台、复杂拖拽编排

@@ -314,6 +314,24 @@ export class ScenesService {
     return this.prisma.sceneSummary.update({ where: { id: summaryId }, data: { deletedAt: new Date() } });
   }
 
+  async confirmSummary(projectId: string, summaryId: string) {
+    await this.getSummary(projectId, summaryId);
+    return this.prisma.sceneSummary.update({ where: { id: summaryId }, data: { canonStatus: 'confirmed' } });
+  }
+
+  async archiveSummary(projectId: string, summaryId: string) {
+    await this.getSummary(projectId, summaryId);
+    return this.prisma.sceneSummary.update({ where: { id: summaryId }, data: { canonStatus: 'archived' } });
+  }
+
+  async restoreSummary(projectId: string, summaryId: string) {
+    const summary = await this.prisma.sceneSummary.findFirst({ where: { id: summaryId, projectId } });
+    if (!summary) throw new NotFoundException(`SceneSummary ${summaryId} not found in project ${projectId}`);
+    await this.ensureSceneTriplet(projectId, summary.chapterId, summary.sceneId);
+    if (!summary.deletedAt && summary.canonStatus !== 'archived') return summary;
+    return this.prisma.sceneSummary.update({ where: { id: summaryId }, data: { deletedAt: null, canonStatus: 'draft' } });
+  }
+
   async listHandoffs(projectId: string, sceneId: string) {
     await this.getScene(projectId, sceneId);
     return this.prisma.sceneHandoff.findMany({ where: { projectId, sceneId, deletedAt: null }, orderBy: latestOrderBy });
@@ -349,6 +367,24 @@ export class ScenesService {
   async deleteHandoff(projectId: string, handoffId: string) {
     await this.getHandoff(projectId, handoffId);
     return this.prisma.sceneHandoff.update({ where: { id: handoffId }, data: { deletedAt: new Date() } });
+  }
+
+  async confirmHandoff(projectId: string, handoffId: string) {
+    await this.getHandoff(projectId, handoffId);
+    return this.prisma.sceneHandoff.update({ where: { id: handoffId }, data: { canonStatus: 'confirmed' } });
+  }
+
+  async archiveHandoff(projectId: string, handoffId: string) {
+    await this.getHandoff(projectId, handoffId);
+    return this.prisma.sceneHandoff.update({ where: { id: handoffId }, data: { canonStatus: 'archived' } });
+  }
+
+  async restoreHandoff(projectId: string, handoffId: string) {
+    const handoff = await this.prisma.sceneHandoff.findFirst({ where: { id: handoffId, projectId } });
+    if (!handoff) throw new NotFoundException(`SceneHandoff ${handoffId} not found in project ${projectId}`);
+    await this.ensureSceneTriplet(projectId, handoff.chapterId, handoff.sceneId);
+    if (!handoff.deletedAt && handoff.canonStatus !== 'archived') return handoff;
+    return this.prisma.sceneHandoff.update({ where: { id: handoffId }, data: { deletedAt: null, canonStatus: 'draft' } });
   }
 
   private async ensureProject(projectId: string) {
