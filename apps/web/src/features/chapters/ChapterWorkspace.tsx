@@ -66,6 +66,11 @@ type SelectOption = { label: string; value: string };
 
 const chapterStatusOptions = statusOptions(['draft', 'generating', 'reviewing', 'done', 'archived'] as const);
 const sceneStatusOptions = statusOptions(['planned', 'writing', 'reviewing', 'done'] as const);
+const sceneSourceOptions = [
+  { label: '手动记录', value: 'user' },
+  { label: '导入内容', value: 'imported' },
+  { label: '智能辅助', value: 'ai' },
+];
 const detailTabs: DetailTab[] = ['flow', 'body', 'summaries', 'versions', 'overview'];
 const sceneTabs: SceneDetailTab[] = ['plan', 'version', 'summary', 'handoff'];
 const resourceTitle: Record<SceneResourceKind, string> = { plan: '场景计划', version: '场景正文版本', summary: '场景摘要', handoff: '场景交接' };
@@ -616,7 +621,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       </Form> : null}
     </SideSheet>
 
-    <SideSheet title={editingSceneResource ? `${editingSceneResource.mode === 'create' ? '新增' : '编辑'}${resourceTitle[editingSceneResource.kind]}` : ''} visible={Boolean(editingSceneResource)} onCancel={() => setEditingSceneResource(undefined)} width={720} footer={<SheetFooter onCancel={() => setEditingSceneResource(undefined)} onSave={saveSceneResource} saving={saving} />}>
+    <SideSheet title={editingSceneResource ? `${editingSceneResource.mode === 'create' ? '新增' : '编辑'}${resourceTitle[editingSceneResource.kind]}` : ''} visible={Boolean(editingSceneResource)} onCancel={() => setEditingSceneResource(undefined)} width={editingSceneResource?.kind === 'version' ? 'min(80vw, 900px)' : 'min(72vw, 820px)'} footer={<SheetFooter onCancel={() => setEditingSceneResource(undefined)} onSave={saveSceneResource} saving={saving} />}>
       {editingSceneResource ? <SceneResourceForm editing={editingSceneResource} formApiSetter={setResourceFormApi} currentVersionId={selectedSceneProfile?.scene.currentVersionId} sceneVersionOptions={sceneVersions.map((version) => ({ value: version.id, label: versionLabel(version) }))} sceneOptions={sceneOptions} /> : null}
     </SideSheet>
 
@@ -820,7 +825,8 @@ function BodyPanel({ content, setContent, changeSummary, setChangeSummary, saveA
         <Tag color="blue">字数 {countWords(content)}</Tag>
         {currentVersion ? <Text type="tertiary">当前章节正文：{shortId(currentVersion.id)} · {formatDate(currentVersion.updatedAt || currentVersion.createdAt)}</Text> : <Text type="tertiary">暂无当前章节正文，可直接编辑并保存为版本。</Text>}
       </Space>
-      <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="这里是读者最终看到的章节正文。保存会生成新的章节版本，不会覆盖历史版本。" style={textareaStyle(360)} />
+      <Text type="tertiary">这里是写作优先的大编辑区。保存会生成新的章节正文版本，不会覆盖历史版本。</Text>
+      <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="这里是读者最终看到的章节正文。保存会生成新的章节版本，不会覆盖历史版本。" style={textareaStyle('50vh')} />
       <input value={changeSummary} onChange={(event) => setChangeSummary(event.target.value)} placeholder="版本说明（可选）" style={inputStyle} />
       <Space style={{ justifyContent: 'space-between' }}>
         <Checkbox checked={saveAndActivate} onChange={(event) => setSaveAndActivate(Boolean(event.target.checked))}>保存后设为当前章节正文</Checkbox>
@@ -975,36 +981,40 @@ function SceneResourceForm({ editing, formApiSetter, currentVersionId, sceneVers
   return <Form key={`${editing.kind}:${editing.mode}:${editing.mode === 'edit' ? editing.item.id : 'new'}`} initValues={values} getFormApi={formApiSetter} labelPosition="top">
     {editing.kind === 'plan' ? <>
       <Form.Input field="title" label="标题" />
-      <Form.TextArea field="goal" label="目标" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="outline" label="梗概" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="conflict" label="冲突" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="choice" label="选择" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="consequence" label="后果" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="readerPromise" label="读者期待" autosize={{ minRows: 2, maxRows: 6 }} />
-      <Form.TextArea field="readerPayoff" label="读者回报" autosize={{ minRows: 2, maxRows: 6 }} />
-      <Form.TextArea field="nextHook" label="下一场钩子" autosize={{ minRows: 2, maxRows: 6 }} />
+      <Form.TextArea field="goal" label="目标" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="outline" label="梗概" autosize={{ minRows: 5, maxRows: 12 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="conflict" label="冲突" autosize={{ minRows: 5, maxRows: 12 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="choice" label="选择" autosize={{ minRows: 5, maxRows: 12 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="consequence" label="后果" autosize={{ minRows: 5, maxRows: 12 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="readerPromise" label="读者期待" autosize={{ minRows: 3, maxRows: 8 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="readerPayoff" label="读者回报" autosize={{ minRows: 3, maxRows: 8 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="nextHook" label="下一场钩子" autosize={{ minRows: 3, maxRows: 8 }} textareaStyle={longTextareaStyle} />
     </> : null}
     {editing.kind === 'version' ? <>
-      <Form.TextArea field="content" label="正文" rules={[{ required: true, message: '请填写正文' }]} autosize={{ minRows: 12, maxRows: 22 }} />
-      <Form.TextArea field="changeSummary" label="变更说明" autosize={{ minRows: 2, maxRows: 6 }} />
-      <Form.Select field="basedOnVersionId" label="基于正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', columnGap: 16 }}>
+        <Form.Select field="source" label="来源" style={{ width: '100%' }}>{sceneSourceOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
+        <Form.InputNumber field="wordCount" label="字数" style={{ width: '100%' }} />
+        <Form.Select field="basedOnVersionId" label="基于正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
+      </div>
+      <Form.TextArea field="changeSummary" label="变更说明" autosize={{ minRows: 3, maxRows: 8 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="content" label="正文" extraText="写作优先的大编辑区。保存会生成新的场景正文版本，新增版本会自动设为当前正文。" rules={[{ required: true, message: '请填写正文' }]} autosize={false} rows={24} style={{ width: '100%' }} textareaStyle={writingTextareaStyle} resize="vertical" />
     </> : null}
     {editing.kind === 'summary' ? <>
       <Form.Select field="sceneVersionId" label="关联正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
-      <Form.TextArea field="summary" label="摘要" rules={[{ required: true, message: '请填写摘要' }]} autosize={{ minRows: 5, maxRows: 12 }} />
-      <Form.TextArea field="keyEventsText" label="关键事件（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="characterChangesText" label="人物变化（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="newFactsText" label="新增事实（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
+      <Form.TextArea field="summary" label="摘要" rules={[{ required: true, message: '请填写摘要' }]} autosize={{ minRows: 6, maxRows: 14 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="keyEventsText" label="关键事件（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="characterChangesText" label="人物变化（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="newFactsText" label="新增事实（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
       <Text type="tertiary" size="small">这条摘要确认前，不会作为可靠上下文使用。</Text>
     </> : null}
     {editing.kind === 'handoff' ? <>
       <Form.Select field="sceneVersionId" label="关联正文版本" showClear style={{ width: '100%' }}>{sceneVersionOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
       <Form.Select field="nextSceneId" label="指向下一场" showClear style={{ width: '100%' }}>{sceneOptions.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>
-      <Form.TextArea field="readerKnowsText" label="读者已知信息（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="actualChangesText" label="实际变化（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="openQuestionsText" label="未解问题（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="nextSceneMustText" label="下一场必须处理（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
-      <Form.TextArea field="riskNotesText" label="风险备注（JSON 或文本）" autosize={{ minRows: 3, maxRows: 8 }} />
+      <Form.TextArea field="readerKnowsText" label="读者已知信息（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="actualChangesText" label="实际变化（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="openQuestionsText" label="未解问题（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="nextSceneMustText" label="下一场必须处理（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
+      <Form.TextArea field="riskNotesText" label="风险备注（JSON 或文本）" autosize={{ minRows: 4, maxRows: 10 }} textareaStyle={longTextareaStyle} />
       <Text type="tertiary" size="small">这条交接确认前，不会作为可靠上下文使用。</Text>
     </> : null}
   </Form>;
@@ -1070,7 +1080,10 @@ function saveResource(projectId: string, sceneId: string, editing: EditingSceneR
   if (editing.kind === 'version') {
     const content = normalizeString(values.content);
     if (!content) throw new Error('请填写正文');
-    const input: SceneVersionInput = { content, source: 'user', changeSummary: normalizeString(values.changeSummary), basedOnVersionId: normalizeString(values.basedOnVersionId) };
+    const source = normalizeString(values.source) ?? 'user';
+    if (!['user', 'imported', 'ai'].includes(source)) throw new Error('来源只能选择“手动记录、导入内容、智能辅助”。');
+    const wordCount = typeof values.wordCount === 'number' ? values.wordCount : undefined;
+    const input: SceneVersionInput = { content, source, wordCount, changeSummary: normalizeString(values.changeSummary), basedOnVersionId: normalizeString(values.basedOnVersionId) };
     return editing.mode === 'create' ? createSceneVersion(projectId, sceneId, input) : updateSceneVersion(projectId, editing.item.id, input);
   }
   if (editing.kind === 'summary') {
@@ -1279,8 +1292,11 @@ function countWords(content: string) {
   return content.replace(/\s+/g, '').length;
 }
 
-function textareaStyle(minHeight: number): React.CSSProperties {
-  return { width: '100%', minHeight, resize: 'vertical', padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 10, color: 'var(--semi-color-text-0)', background: 'var(--semi-color-bg-0)', lineHeight: 1.7, fontSize: 14 };
+function textareaStyle(minHeight: number | string): React.CSSProperties {
+  return { width: '100%', boxSizing: 'border-box', minHeight, resize: 'vertical', padding: 14, border: '1px solid var(--semi-color-border)', borderRadius: 10, color: 'var(--semi-color-text-0)', background: 'var(--semi-color-bg-0)', lineHeight: 1.8, fontSize: 15 };
 }
+
+const writingTextareaStyle: React.CSSProperties = { minHeight: '52vh', lineHeight: 1.8, fontSize: 15 };
+const longTextareaStyle: React.CSSProperties = { minHeight: 140, lineHeight: 1.7 };
 
 const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid var(--semi-color-border)', borderRadius: 8, color: 'var(--semi-color-text-0)', background: 'var(--semi-color-bg-0)' };

@@ -615,26 +615,42 @@ function SceneChildSection({ projectId, sceneId, scenes, config, profile, onChan
         </Space>
       </div>)}
     </div>}
-    <SideSheet title={editingItem && isDraft(editingItem.item) ? config.addLabel : `编辑 ${config.title}`} visible={Boolean(editingItem)} onCancel={() => { setEditingItem(undefined); setChangedFields(new Set()); }} width={620} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => { setEditingItem(undefined); setChangedFields(new Set()); }}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveItem}>保存</Button></div>}>
+    <SideSheet title={editingItem && isDraft(editingItem.item) ? config.addLabel : `编辑 ${config.title}`} visible={Boolean(editingItem)} onCancel={() => { setEditingItem(undefined); setChangedFields(new Set()); }} width={childSheetWidth(config.kind)} footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}><Button onClick={() => { setEditingItem(undefined); setChangedFields(new Set()); }}>取消</Button><Button theme="solid" type="primary" loading={saving} onClick={saveItem}>保存</Button></div>}>
       {editingItem ? <Form key={editingItem.item.id} initValues={formValues(isDraft(editingItem.item) ? editingItem.item.fields : editingItem.item, config)} getFormApi={setFormApi} labelPosition="top" onValueChange={(_, changedValue) => setChangedFields((current) => new Set([...current, ...Object.keys(changedValue)]))}><SceneFieldsForm fields={config.fields} requiredFields={config.requiredFields ?? []} jsonFields={config.jsonFields ?? []} lookupOptions={childLookupOptions} /></Form> : null}
     </SideSheet>
   </section>;
 }
 
 function SceneFieldsForm({ fields, requiredFields, jsonFields, lookupOptions = {} }: { fields: SceneField[]; requiredFields: string[]; jsonFields: string[]; lookupOptions?: Record<string, SelectOption[]> }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 16 }}>
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 16, rowGap: 2 }}>
     {fields.map((field) => {
       const rules = requiredFields.includes(field.key) ? [{ required: true, message: `请填写${field.label}` }] : undefined;
       const long = field.long;
       const helpText = jsonFields.includes(field.key) ? '可填写列表、分点或简短说明；留空会清空该字段。' : undefined;
       const options = field.options ?? lookupOptions[field.key];
-      if (long) return <Form.TextArea key={field.key} field={field.key} label={field.label} extraText={helpText} autosize={{ minRows: 3, maxRows: field.key === 'content' ? 14 : 8 }} style={{ gridColumn: '1 / -1' }} rules={rules} />;
+      const fullRowStyle: React.CSSProperties = { gridColumn: '1 / -1', width: '100%' };
+      if (long) return <Form.TextArea key={field.key} field={field.key} label={field.label} extraText={helpText} autosize={field.key === 'content' ? false : { minRows: 5, maxRows: 12 }} rows={field.key === 'content' ? 24 : undefined} fieldStyle={fullRowStyle} style={{ width: '100%' }} textareaStyle={field.key === 'content' ? writingTextareaStyle : longTextareaStyle} resize="vertical" rules={rules} />;
       if (options) return <Form.Select key={field.key} field={field.key} label={field.label} placeholder={field.placeholder ?? '请选择'} rules={rules} showClear style={{ width: '100%' }}>{options.map((option) => <Select.Option key={option.value} value={option.value}>{option.label}</Select.Option>)}</Form.Select>;
       if (field.key === 'orderIndex' || field.key === 'wordCount') return <Form.InputNumber key={field.key} field={field.key} label={field.label} style={{ width: '100%' }} rules={rules} />;
       return <Form.Input key={field.key} field={field.key} label={field.label} placeholder={field.placeholder} rules={rules} />;
     })}
   </div>;
 }
+
+function childSheetWidth(kind: SceneChildKind) {
+  return kind === 'versions' ? 'min(80vw, 900px)' : 'min(72vw, 820px)';
+}
+
+const writingTextareaStyle: React.CSSProperties = {
+  minHeight: '52vh',
+  lineHeight: 1.8,
+  fontSize: 15,
+};
+
+const longTextareaStyle: React.CSSProperties = {
+  minHeight: 140,
+  lineHeight: 1.7,
+};
 
 function InfoCell({ label, value }: { label: string; value: unknown }) {
   return <div style={{ minWidth: 0 }}><Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 4 }}>{label}</Text><Paragraph type={isEmpty(value) ? 'tertiary' : undefined} ellipsis={{ rows: 2, showTooltip: true }} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{displayValue(value) || '未填写'}</Paragraph></div>;
