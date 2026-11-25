@@ -24,7 +24,24 @@
 10. 所有 Prompt 改动必须更新 Prompt 版本文档。
 11. MVP 不引入多人协作、实时协同编辑、复杂权限模型。
 
-## 2. 前端约束
+## 2. AI 草稿与创作判断原则
+
+1. 第一阶段优先服务 owner 自己的深度 AI 小说创作流程，先跑通 AI 写小说工作流，再考虑泛化到普通用户或团队。
+2. 产品定位是 AI 小说 IDE / AI 小说生产工作台，不是普通 CRUD 后台、纯资料库、纯 Notion 式设定库或聊天生成器。
+3. AI 是主流程参与者：可以生成角色、地点、势力、世界规则、关系、分卷、章节计划、场景计划、正文、摘要和交接，并形成可审核草稿。
+4. 人的核心职责是审核、编辑、应用、丢弃和反馈重生成，而不是手动填完所有资料。
+5. AI 生成内容应先进入草稿 / 建议态，由用户审核后应用；不得让 AI 直接绕过审核写入 confirmed/canon 正式数据。
+6. “落库”需要区分草稿暂存和正式应用：草稿可以保存以便审稿、编辑、重生成和回溯；正式数据必须来自用户应用动作。
+7. 用户侧审核动作保持极简：应用、编辑、丢弃、带反馈重生成。不要把每一种创作判断都做成独立状态、按钮、字段或流程分支。
+8. 不要用系统枚举去覆盖所有创作判断。创作判断是开放问题，应交给大模型和用户反馈；系统只沉淀稳定的状态、版本、来源、确认与回滚能力。
+9. 避免把产品做成僵硬臃肿的“创作 ERP”。发现新 case 时，优先考虑是否可通过自然语言反馈 + 大模型重生成解决，而不是立刻新增字段/状态/按钮。
+10. AI 草稿推荐统一抽象为 GeneratedDraft / Proposal 类能力：记录 projectId、targetType、targetId?、draftType、payload/textPreview、sourceTaskId、feedback/status、previousDraftId? 等；应用时再写入正式领域表。
+11. 草稿入口 P1 优先做模块内相关草稿，不急着做全局待审核队列；全局队列可后置。
+12. 默认只让 confirmed 数据进入后续 Context Builder；draft 可被用户显式选择参与本次生成，但不能因此自动确认。
+13. 正文版本的 current 指针可以由用户选择自动更新；正史类 confirmed/canon 必须来自用户应用/确认动作。
+14. “继续写下一章”应是半自动工作流：可由 AI 主导推进，但必须允许在关键节点暂停、编辑、应用、丢弃或带反馈重生成。
+
+## 3. 前端约束
 
 1. UI 组件优先使用 Semi Design。
 2. 页面级代码放在 `apps/web/src/pages`。
@@ -34,7 +51,7 @@
 6. SSE 连接逻辑必须封装在 generation feature 内，不得散落在页面组件中。
 7. 页面组件不得直接包含复杂数据转换逻辑。
 
-## 3. 后端约束
+## 4. 后端约束
 
 1. NestJS 模块必须按业务边界组织。
 2. Controller 只处理请求、响应、DTO 校验。
@@ -45,7 +62,7 @@
 7. BullMQ Processor 只负责任务执行编排，不承载核心领域逻辑。
 8. Prisma Client 只能通过 PrismaService 注入使用。
 
-## 4. 数据库约束
+## 5. 数据库约束
 
 1. 所有表必须包含 `id`, `createdAt`, `updatedAt`。
 2. 所有项目内资源必须包含 `projectId`。
@@ -54,7 +71,7 @@
 5. 生成任务和 Prompt 版本必须可追溯。
 6. 预留 pgvector，但 MVP 不强依赖 embedding。
 
-## 5. Prompt 约束
+## 6. Prompt 约束
 
 1. Prompt 文件统一放在 `docs/prompts` 或 `packages/prompt-spec`。
 2. Prompt 版本号格式：`<domain>.<task>.v<major>.<minor>.<patch>`。
@@ -62,7 +79,7 @@
 4. 输出格式变化必须记录。
 5. 每个 Prompt 必须包含：目标、输入变量、输出格式、约束、示例、版本变更记录。
 
-## 6. SSE 约束
+## 7. SSE 约束
 
 1. SSE 事件必须使用统一事件类型。
 2. 错误必须发送结构化 error event。
@@ -70,7 +87,7 @@
 4. 前端必须支持根据 taskId 查询最终任务状态。
 5. 不允许把完整业务状态只存在内存中。
 
-## 7. 文档约束
+## 8. 文档约束
 
 1. 架构决策必须写 ADR。
 2. 新增核心模块必须有模块设计文档。
@@ -79,7 +96,7 @@
 5. 接口变化必须更新 API 文档。
 6. 新增或修改实体 API 前，必须遵守 `docs/development/entity-api-principles.md`，确保基础 CRUD 同时服务 AI 草稿、Context Builder、批量编排和错误重试。
 
-## 8. 测试约束
+## 9. 测试约束
 
 1. Context Builder 必须有单元测试。
 2. Prompt 渲染必须有快照或结构测试。
@@ -87,7 +104,7 @@
 4. SSE 事件格式必须有契约测试。
 5. Prisma migration 不允许手写未审查 SQL。
 
-## 9. 数据库迁移规范
+## 10. 数据库迁移规范
 
 1. `apps/api/prisma/schema.prisma` 是业务数据模型的唯一主入口。
 2. MVP 阶段不使用 Flyway，统一使用 Prisma Migrate 管理业务 schema 变更。
@@ -101,7 +118,7 @@
 10. 所有 schema 变更后必须运行：`pnpm db:generate`、`pnpm db:migrate`、相关类型检查或测试。
 11. 生产数据迁移必须优先考虑向后兼容，不允许直接删除有用数据字段。
 
-## 10. 架构演进约束
+## 11. 架构演进约束
 
 1. 允许分阶段实现，但不允许为了 MVP 破坏长期模块边界。
 2. “轻实现”只能轻在功能完整度，不能轻在数据模型、追溯链路和模块职责。
@@ -112,14 +129,14 @@
 7. 对暂缓模块必须在 docs 中说明未来扩展方向，不能只留 TODO。
 8. 当“简单实现”和“长期可维护边界”冲突时，优先长期边界。
 
-## 11. Semi Design MCP 约束
+## 12. Semi Design MCP 约束
 
 1. 开发 Semi Design UI 时，应优先使用项目配置的 `semi-design` MCP 查询组件 API 和示例。
 2. 不允许凭印象编造 Semi 组件属性；不确定时先查 MCP 或官方文档。
 3. Semi 组件使用方式如果和 TypeScript 类型冲突，以类型检查和 MCP 文档为准。
 4. 常用复杂组件，例如 Form、Table、Modal、SideSheet、Tree、Tabs、Nav，应在实现前确认 API。
 
-## 12. 产品交互约束
+## 13. 产品交互约束
 
 1. 本项目不是普通 CRUD 后台，而是 AI 小说创作工作台。
 2. 前端信息架构分为两层：书架层和小说工作台层。
@@ -134,7 +151,7 @@
 
 详见 `docs/development/interaction-principles.md`。
 
-## 13. 开发任务拆分约束
+## 14. 开发任务拆分约束
 
 1. 开发必须按 `docs/development/task-breakdown.md` 的模块推进。
 2. 新增模块前必须先补任务拆分和模块规则。
