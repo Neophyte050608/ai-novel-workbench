@@ -50,6 +50,7 @@ type EditingChapterState = { mode: 'create' } | { mode: 'edit'; chapter: Chapter
 type EditingSceneState = { mode: 'create' } | { mode: 'edit'; scene: Scene };
 type EditingSummaryState = { mode: 'create' } | { mode: 'edit'; summary: ChapterSummary };
 type EditingAiDraftState = { draft: GeneratedDraft; payloadText: string; textPreview: string; feedback: string };
+type DraftActionBusy = { draftId: string; action: 'apply' | 'discard' | 'regenerate' | 'edit' };
 type DetailTab = 'flow' | 'body' | 'summaries' | 'versions' | 'overview';
 type SceneDetailTab = 'plan' | 'version' | 'summary' | 'handoff';
 type SceneResourceKind = 'plan' | 'version' | 'summary' | 'handoff';
@@ -115,8 +116,9 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   const [editingSummary, setEditingSummary] = useState<EditingSummaryState>();
   const [aiDrafts, setAiDrafts] = useState<GeneratedDraft[]>([]);
   const [aiDraftsLoading, setAiDraftsLoading] = useState(false);
+  const [draftSheetOpen, setDraftSheetOpen] = useState(false);
   const [editingAiDraft, setEditingAiDraft] = useState<EditingAiDraftState>();
-  const [draftActionBusy, setDraftActionBusy] = useState<string>();
+  const [draftActionBusy, setDraftActionBusy] = useState<DraftActionBusy>();
   const [applyDraftActivate, setApplyDraftActivate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formApi, setFormApi] = useState<FormApi>();
@@ -583,7 +585,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   }
 
   async function handleApplyAiDraft(draft: GeneratedDraft, activate: boolean) {
-    setDraftActionBusy(draft.id);
+    setDraftActionBusy({ draftId: draft.id, action: 'apply' });
     try {
       await applyAiDraft(projectId, draft.id, { activate });
       Notification.success({ title: activate ? 'AI 草稿已应用并设为当前' : 'AI 草稿已应用' });
@@ -596,7 +598,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   }
 
   async function handleDiscardAiDraft(draft: GeneratedDraft) {
-    setDraftActionBusy(draft.id);
+    setDraftActionBusy({ draftId: draft.id, action: 'discard' });
     try {
       await discardAiDraft(projectId, draft.id);
       Notification.success({ title: 'AI 草稿已丢弃' });
@@ -610,7 +612,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
 
   async function saveAiDraftEdit() {
     if (!editingAiDraft) return;
-    setDraftActionBusy(editingAiDraft.draft.id);
+    setDraftActionBusy({ draftId: editingAiDraft.draft.id, action: 'edit' });
     try {
       await updateAiDraft(projectId, editingAiDraft.draft.id, {
         payload: parseJsonObject(editingAiDraft.payloadText),
@@ -635,7 +637,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       Notification.warning({ title: '请先填写反馈' });
       return;
     }
-    setDraftActionBusy(draft.id);
+    setDraftActionBusy({ draftId: draft.id, action: 'regenerate' });
     try {
       await regenerateAiDraft(projectId, draft.id, { feedback });
       Notification.success({ title: '已基于反馈创建新草稿（P1 mock，未调用 AI）' });
@@ -765,7 +767,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       </Card>
 
       <div className="chapter-workspace__context" style={{ display: 'grid', gap: 12 }}>
-        <AiDraftPanel drafts={relevantAiDrafts} loading={aiDraftsLoading} busyDraftId={draftActionBusy} activate={applyDraftActivate} setActivate={setApplyDraftActivate} onApply={handleApplyAiDraft} onEdit={(draft) => setEditingAiDraft({ draft, payloadText: safeStringify(draft.payload), textPreview: draft.textPreview ?? '', feedback: draft.feedback ?? '' })} onDiscard={handleDiscardAiDraft} onRegenerate={handleRegenerateAiDraft} />
+        <AiDraftEntry drafts={relevantAiDrafts} loading={aiDraftsLoading} onOpen={() => setDraftSheetOpen(true)} />
         <ContextPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onIssueClick={focusIssue} onSuggestionClick={handleSuggestionAction} />
       </div>
     </div>
@@ -808,7 +810,11 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
       </> : null}
     </SideSheet>
 
-    <SideSheet title="编辑 AI 草稿/建议" visible={Boolean(editingAiDraft)} onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} width="min(82vw, 920px)" footer={<SheetFooter onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} onSave={saveAiDraftEdit} saving={Boolean(draftActionBusy && editingAiDraft?.draft.id === draftActionBusy)} />}>
+    <SideSheet title="AI 草稿/建议" visible={draftSheetOpen} onCancel={() => setDraftSheetOpen(false)} width="min(82vw, 920px)">
+      <AiDraftPanel drafts={relevantAiDrafts} loading={aiDraftsLoading} busy={draftActionBusy} activate={applyDraftActivate} setActivate={setApplyDraftActivate} onApply={handleApplyAiDraft} onEdit={(draft) => setEditingAiDraft({ draft, payloadText: safeStringify(draft.payload), textPreview: draft.textPreview ?? '', feedback: draft.feedback ?? '' })} onDiscard={handleDiscardAiDraft} onRegenerate={handleRegenerateAiDraft} />
+    </SideSheet>
+
+    <SideSheet title="编辑 AI 草稿/建议" visible={Boolean(editingAiDraft)} onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} width="min(82vw, 920px)" footer={<SheetFooter onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} onSave={saveAiDraftEdit} saving={Boolean(draftActionBusy && editingAiDraft?.draft.id === draftActionBusy.draftId && draftActionBusy.action === 'edit')} />}>
       {editingAiDraft ? <div style={{ display: 'grid', gap: 14 }}>
         <Text type="tertiary">只能编辑 pending 草稿的 payload、展示预览和反馈；状态、归属和应用目标由系统控制。</Text>
         <div>
@@ -1152,10 +1158,23 @@ function SummariesPanel({ summaries, currentSummary, currentVersionId, rollingUp
 }
 
 
-function AiDraftPanel({ drafts, loading, busyDraftId, activate, setActivate, onApply, onEdit, onDiscard, onRegenerate }: {
+function AiDraftEntry({ drafts, loading, onOpen }: { drafts: GeneratedDraft[]; loading: boolean; onOpen: () => void }) {
+  if (!loading && drafts.length === 0) return null;
+  return <Card className="ai-draft-entry" bodyStyle={{ padding: 12 }}>
+    <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+      <Space spacing={8}>
+        <Tag color={drafts.length > 0 ? 'blue' : undefined}>AI 草稿 {drafts.length}</Tag>
+        <Text type="tertiary" size="small">辅助候选，不占用写作上下文</Text>
+      </Space>
+      <Button size="small" loading={loading} disabled={drafts.length === 0} onClick={onOpen}>查看草稿</Button>
+    </Space>
+  </Card>;
+}
+
+function AiDraftPanel({ drafts, loading, busy, activate, setActivate, onApply, onEdit, onDiscard, onRegenerate }: {
   drafts: GeneratedDraft[];
   loading: boolean;
-  busyDraftId?: string;
+  busy?: DraftActionBusy;
   activate: boolean;
   setActivate: (value: boolean) => void;
   onApply: (draft: GeneratedDraft, activate: boolean) => void;
@@ -1163,13 +1182,24 @@ function AiDraftPanel({ drafts, loading, busyDraftId, activate, setActivate, onA
   onDiscard: (draft: GeneratedDraft) => void;
   onRegenerate: (draft: GeneratedDraft) => void;
 }) {
-  return <Card title="AI 草稿/建议" bodyStyle={{ padding: 12 }}>
-    <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 10 }}>只显示当前章节和当前场景相关的 pending 草稿。P1 反馈重生成会创建新草稿 mock，不调用 AI。</Text>
-    <Checkbox checked={activate} onChange={(event) => setActivate(Boolean(event.target.checked))} style={{ marginBottom: 10 }}>应用版本类草稿后设为当前</Checkbox>
-    {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={4} />} loading /> : drafts.length === 0 ? <EmptyState title="暂无相关 AI 草稿" description="后续生成任务会把候选正文、场景计划和摘要放到这里等待审核。" /> : <div style={{ display: 'grid', gap: 10 }}>
+  if (loading) return <Skeleton placeholder={<Skeleton.Paragraph rows={5} />} loading />;
+  if (drafts.length === 0) return <Text type="tertiary">暂无当前章节或当前场景相关的 pending AI 草稿。</Text>;
+
+  return <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+      <div>
+        <Text strong>待处理草稿 {drafts.length}</Text>
+        <Text type="tertiary" size="small" style={{ display: 'block', marginTop: 4 }}>只显示当前章节和当前场景相关的 pending 草稿。P1 反馈重生成会创建新草稿 mock，不调用 AI。</Text>
+      </div>
+      <Checkbox checked={activate} onChange={(event) => setActivate(Boolean(event.target.checked))}>应用版本类草稿后设为当前</Checkbox>
+    </div>
+    <div style={{ display: 'grid', gap: 10 }}>
       {drafts.map((draft) => {
         const canActivate = draft.targetType === 'chapter_version' || draft.targetType === 'scene_version' || draft.targetType === 'scene_plan';
-        const busy = busyDraftId === draft.id;
+        const applyBusy = busy?.draftId === draft.id && busy.action === 'apply';
+        const discardBusy = busy?.draftId === draft.id && busy.action === 'discard';
+        const regenerateBusy = busy?.draftId === draft.id && busy.action === 'regenerate';
+        const actionDisabled = Boolean(busy && busy.draftId !== draft.id);
         return <article key={draft.id} style={{ padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 12 }}>
           <Space wrap spacing={6} style={{ rowGap: 6 }}>
             <Tag color="blue">{draftTargetLabel(draft.targetType)}</Tag>
@@ -1180,15 +1210,15 @@ function AiDraftPanel({ drafts, loading, busyDraftId, activate, setActivate, onA
           <Paragraph ellipsis={{ rows: 4, showTooltip: true }} style={{ margin: '8px 0', whiteSpace: 'pre-wrap' }}>{draft.textPreview || draftPayloadPreview(draft.payload)}</Paragraph>
           {draft.feedback ? <Text type="tertiary" size="small" ellipsis={{ showTooltip: true }}>反馈：{draft.feedback}</Text> : null}
           <Space wrap style={{ marginTop: 10 }}>
-            <Button size="small" theme="solid" type="primary" loading={busy} onClick={() => onApply(draft, canActivate ? activate : false)}>应用</Button>
-            <Button size="small" onClick={() => onEdit(draft)}>编辑</Button>
-            <Button size="small" onClick={() => onRegenerate(draft)}>带反馈重生成</Button>
-            <Popconfirm title="确认丢弃这个 AI 草稿？" content="丢弃不会物理删除，只会退出 pending 列表。" onConfirm={() => onDiscard(draft)}><Button size="small" type="danger" theme="borderless" loading={busy}>丢弃</Button></Popconfirm>
+            <Button size="small" theme="solid" type="primary" loading={applyBusy} disabled={actionDisabled} onClick={() => onApply(draft, canActivate ? activate : false)}>应用</Button>
+            <Button size="small" disabled={Boolean(busy)} onClick={() => onEdit(draft)}>编辑</Button>
+            <Button size="small" loading={regenerateBusy} disabled={actionDisabled} onClick={() => onRegenerate(draft)}>带反馈重生成</Button>
+            <Popconfirm title="确认丢弃这个 AI 草稿？" content="丢弃不会物理删除，只会退出 pending 列表。" onConfirm={() => onDiscard(draft)}><Button size="small" type="danger" theme="borderless" loading={discardBusy} disabled={actionDisabled}>丢弃</Button></Popconfirm>
           </Space>
         </article>;
       })}
-    </div>}
-  </Card>;
+    </div>
+  </div>;
 }
 
 function ContextPanel({ chapter, profile, progress, onIssueClick, onSuggestionClick }: { chapter?: Chapter; profile?: ChapterProfile; progress?: SceneProgress; onIssueClick: (issue: WritingIssue) => void; onSuggestionClick: (item: NextSuggestion) => void }) {
@@ -1494,7 +1524,11 @@ function parseJsonObject(text: string) {
 }
 
 function safeStringify(value: unknown) {
-  return JSON.stringify(value ?? {}, null, 2);
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return '{}';
+  }
 }
 
 function draftPayloadPreview(value: unknown) {
