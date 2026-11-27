@@ -22,6 +22,7 @@ P0 运行环境与规范
   -> P1 大纲规划
   -> P1 章节正文与版本
   -> P1 章节写作工作台
+  -> P1 AI Draft / Proposal
   -> P1 Context Builder
   -> P1 Prompt 管理
   -> P1 LLM Provider 模型接入层
@@ -377,6 +378,65 @@ P0 运行环境与规范
 | CWW-P2-2 | AI 生成场景计划/正文/摘要/交接 | 后置 | AI 输出分别落入 ScenePlan、SceneVersion、SceneSummary、SceneHandoff，并由用户确认 current/canon 指针 |
 | CWW-P2-3 | ChapterVersionSceneVersion 追溯 | 后置 | ChapterVersion 可追溯由哪些 SceneVersion 装配 |
 | CWW-P2-4 | 版本 diff / 重写 | 后置 | 可比较章节版本、场景版本并局部重写 |
+
+---
+
+# P1：AI Draft / Proposal
+
+## 职责
+
+承接 AI 生成内容的草稿 / 建议态，让用户在模块内完成应用、编辑、丢弃、带反馈重生成，再由目标领域模块写入正式表。
+
+## 不负责什么
+
+1. 不调用 LLM。
+2. 不拼 Prompt。
+3. 不构建 ContextSnapshot。
+4. 不直接写其他领域表。
+5. 不做全局复杂审核流。
+6. 不做多人审批。
+7. 不替代 Character / ChapterVersion / Relationship 等正式领域模型。
+8. 不把所有创作判断都做成状态、按钮、字段或流程分支。
+
+## 开发规则
+
+1. AI 输出默认进入 GeneratedDraft / Proposal，不得直接写 confirmed/canon 正式数据。
+2. 草稿状态只保留 pending、applied、discarded、superseded。
+3. 用户动作只保留应用、编辑、丢弃、带反馈重生成。
+4. Apply 必须经过目标领域模块 Service，不允许 AI Draft 模块绕过边界直接写目标表。
+5. Apply 成功后必须记录 appliedTargetType / appliedTargetId。
+6. sourceTaskId 必须可追溯到 GenerationTask。
+7. 反馈重生成必须保留 previousDraftId 链路。
+8. P1 优先做模块内草稿入口，不做全局待审核队列。
+9. Context Builder 默认不读取 pending 草稿，除非用户显式选择。
+10. 不新增复杂创作判断状态，开放判断交给自然语言 feedback + 大模型。
+
+## 任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| DRAFT-DOC-1 | AI Draft / Proposal 模块设计 | 已做 | `docs/modules/ai-drafts.md` 明确模块定位、非职责、核心概念、状态、动作、Apply 边界和分期 |
+| DRAFT-SCHEMA-1 | GeneratedDraft schema 草案评审 | 待做 | 字段覆盖 projectId、targetType、targetId、draftType、payload、textPreview、status、sourceTaskId、feedback、previousDraftId、appliedTargetId 等；不实现复杂审核状态 |
+| DRAFT-API-1 | 草稿基础 API | 待做 | 支持按 project/target 查询 pending 草稿，支持详情读取 |
+| DRAFT-API-2 | 草稿编辑 / 丢弃 | 待做 | pending 草稿可编辑 payload/textPreview，可标记 discarded |
+| DRAFT-API-3 | Apply 用例边界 | 待做 | Apply 不直接跨模块写表，而是调用目标领域模块；成功后记录 appliedTargetType/appliedTargetId |
+| DRAFT-API-4 | 反馈重生成入口 | 待做 | 可基于 draftId + feedback 创建新的 GenerationTask，旧草稿 superseded，新草稿 previousDraftId 指向旧草稿 |
+| DRAFT-UI-1 | 模块内草稿卡片 | 待做 | Chapter Writing Workspace 内可查看当前章节/场景相关草稿 |
+| DRAFT-UI-2 | 四个用户动作 UI | 待做 | UI 只展示应用、编辑、丢弃、带反馈重生成，不展示复杂审核按钮 |
+| DRAFT-INT-1 | ChapterVersion Apply 接入 | 待做 | 章节正文草稿应用后创建 ChapterVersion，不直接覆盖当前正文 |
+| DRAFT-INT-2 | SceneVersion / ScenePlan Apply 接入 | 待做 | 场景正文草稿写入 SceneVersion；场景计划草稿写入 ScenePlan |
+| DRAFT-INT-3 | ChapterSummary Apply 接入 | 待做 | 摘要草稿应用后写入 ChapterSummary，不自动写 MemoryRecord |
+| DRAFT-QA-1 | 生命周期测试 | 待做 | 覆盖 pending -> applied/discarded/superseded；非 pending 不可再次操作 |
+| DRAFT-QA-2 | 模块边界测试 | 待做 | 验证 Apply 走目标 Service，projectId 不一致时拒绝 |
+
+## P2 / P3 后置
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| DRAFT-P2-1 | 多领域草稿扩展 | 后置 | 支持 Character、Location、Faction、Species、WorldRule、Relationship 等目标类型 |
+| DRAFT-P2-2 | 批量草稿 | 后置 | 一个 GenerationTask 可产出多个 GeneratedDraft，并支持简单批量应用/丢弃 |
+| DRAFT-P2-3 | draft 参与本次 Context | 后置 | 用户可显式选择 pending draft 参与本次生成，ContextSnapshot 记录 draft sourceRefs |
+| DRAFT-P3-1 | 全局草稿队列 | 后置 | 草稿数量变多后提供全局查看和筛选，但不做复杂审批 ERP |
 
 ---
 
