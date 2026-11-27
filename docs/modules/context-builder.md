@@ -4,6 +4,10 @@
 
 Context Builder 在 AI 生成前，把项目内结构化资料组装成一次性的 `ContextSnapshot`。
 
+Context Builder 不是“写章节专用”的工具，而是所有 AI 创作任务的资料包层。它的长期职责是按 `purpose` 为不同 AI 任务构建不同上下文，例如：创建小说基础信息、生成角色、生成地点、生成势力、生成世界规则、生成分卷、生成章节计划、生成场景计划、写场景正文、写章节正文、总结摘要和抽取记忆。
+
+P1 先实现正文链路中最靠近生成的两个 purpose：`generate_chapter` 和 `generate_scene`。其他 purpose 先在矩阵中定义读取策略，后续随 AI 功能逐个接入。
+
 P1 的目标是：
 
 1. **可预览**：`POST /projects/:projectId/context/preview` 返回本次上下文 `payload`、`sourceRefs`、目标信息和粗略 token 估算，不落库。
@@ -29,7 +33,19 @@ Context Builder P1 接受：
 
 ```ts
 type BuildContextDto = {
-  purpose: 'generate_chapter' | 'generate_scene' | 'continue_chapter' | 'summarize_chapter';
+  purpose:
+    | 'generate_project_profile'
+    | 'generate_characters'
+    | 'generate_locations'
+    | 'generate_factions'
+    | 'generate_world_rules'
+    | 'generate_volume'
+    | 'generate_chapter_plan'
+    | 'generate_scene_plan'
+    | 'generate_chapter'
+    | 'generate_scene'
+    | 'summarize_chapter'
+    | 'extract_memory';
   chapterId?: string;
   sceneId?: string;
   includeDrafts?: boolean;        // 默认 false
@@ -38,7 +54,36 @@ type BuildContextDto = {
 };
 ```
 
-P1 实现 `generate_chapter` 和 `generate_scene`。其他 purpose 保留为后续扩展，不在 P1 生成上下文。
+P1 代码实现 `generate_chapter` 和 `generate_scene`。其他 purpose 先作为设计矩阵中的策略边界，后续随对应 AI 功能逐个实现；未实现 purpose 必须返回清晰错误，不允许悄悄 fallback 到章节/场景上下文。
+
+
+## Purpose Matrix / AI 任务上下文矩阵
+
+Context Builder 应按 AI 任务 purpose 选择资料，不同任务不能共用一套“全量项目上下文”。下面矩阵用于指导后续扩展，P1 代码只实现 `generate_chapter` 与 `generate_scene`。
+
+| purpose | 用途 | 主要输入 | 默认读取 | 默认不读取 | 输出目标 |
+|---|---|---|---|---|---|
+| `generate_project_profile` | 根据创意生成小说基础信息 | 用户创意、类型/标签、篇幅/风格偏好 | 用户输入、已有 Project 草稿、显式选择的 draft | 章节/场景正文、实体状态历史 | `GeneratedDraft project_profile` |
+| `generate_characters` | 批量生成核心角色 | Project / story seed / user guidance | Project 基础设定、世界观摘要、已有 confirmed 角色/势力/规则/地点 | 章节全文、场景全文、未确认草稿 | `GeneratedDraft character[]` |
+| `generate_locations` | 生成地点 | Project / worldview / volume? | 世界观、时代背景、confirmed 地点/势力/规则/物种 | 章节全文、无关正文版本 | `GeneratedDraft location[]` |
+| `generate_factions` | 生成势力 | Project / mainPlot / conflict | 世界观、主线冲突、confirmed 角色/地点/规则/已有势力 | 全量章节正文 | `GeneratedDraft faction[]` |
+| `generate_world_rules` | 生成世界规则 | premise / worldview / genre | Project 设定、confirmed 世界规则/物种/能力/道具 | 章节全文、未确认规则草稿 | `GeneratedDraft world_rule[]` |
+| `generate_volume` | 生成分卷 / StoryUnit | Project / target volume count | Project 主线、confirmed assets、已有 Volume、前文摘要 | pending draft 默认不读 | `GeneratedDraft volume[]` |
+| `generate_chapter_plan` | 生成章节计划 | Volume / Chapter / previous summaries | Project、Volume、上一章 confirmed ChapterSummary、相关角色/地点/势力/规则 | 历史正文全文 | `GeneratedDraft chapter_plan` |
+| `generate_scene_plan` | 生成场景计划 | ChapterPlan / Chapter / scene count | ChapterPlan、Chapter 目标、前文摘要、相关资产 | 全量章节正文 | `GeneratedDraft scene_plan[]` |
+| `generate_scene` | 写场景正文 | Scene / ScenePlan | Project、Chapter、ChapterPlan、Scene、ScenePlan、前序 SceneSummary/Handoff、相关角色/地点 | 未确认 draft、无关全文 | `GeneratedDraft scene_version` |
+| `generate_chapter` | 写章节正文 | Chapter / Scenes | Project、Volume、ChapterPlan、Scenes、ScenePlan、confirmed SceneSummary/Handoff、前 1-3 章摘要 | 全历史正文、未确认草稿 | `GeneratedDraft chapter_version` |
+| `summarize_chapter` | 生成章节摘要 | ChapterVersion / SceneSummary | 当前 ChapterVersion、SceneSummary、ChapterPlan、SceneHandoff | 无关资产全集 | `GeneratedDraft chapter_summary` |
+| `extract_memory` | 抽取长期记忆候选 | confirmed ChapterSummary/SceneSummary | confirmed 摘要、sourceRefs、相关实体 | 未确认摘要、正文全文默认不读 | `GeneratedDraft memory_record` |
+
+设计原则：
+
+1. 每个 purpose 都必须声明“读取什么”和“不读取什么”。
+2. 生成基础资产类 purpose 更依赖 Project/World/已确认资产，不应读取章节正文全文。
+3. 写正文类 purpose 更依赖计划、前文摘要、handoff 和相关实体，不应读取全量项目。
+4. 摘要/记忆类 purpose 更依赖已产出的正文版本和摘要，不应反向读取未确认草稿。
+5. pending draft 只有用户显式选择才进入上下文。
+6. 后续新增 purpose 必须先补矩阵，再实现读取策略和测试。
 
 ## P1 读取范围
 

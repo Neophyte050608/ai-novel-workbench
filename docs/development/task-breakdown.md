@@ -461,6 +461,7 @@ P0 运行环境与规范
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
 | CTX-DOC-1 | Context Builder 文档补齐 | 已做 | `docs/modules/context-builder.md` 明确职责、不负责项、读取范围、sourceRefs、confirmed/draft 规则和模块关系 |
+| CTX-DOC-2 | Purpose Matrix | 已做 | 明确 Context Builder 不只是章节/场景正文专用，而是所有 AI 创作任务的资料包层；列出生成小说基础信息、角色、地点、势力、规则、分卷、章节计划、场景计划、正文、摘要、记忆等 purpose 的读取策略 |
 | CTX-SCHEMA-1 | ContextSnapshot P1 字段补齐 | 已做 | 支持 `purpose`、`targetType/targetId`、`chapterId`、`sceneId`、`payload`、`sourceRefs`、`tokenEstimate`、`metadata`、时间戳 |
 | CTX-API-1 | Preview API | 已做 | `POST /projects/:projectId/context/preview` 返回结构化 payload/sourceRefs，不落库 |
 | CTX-API-2 | Snapshot API | 已做 | `POST /projects/:projectId/context/snapshots` 可落库，`GET` list/get 可追溯 |
@@ -469,6 +470,14 @@ P0 运行环境与规范
 | CTX-RULE-1 | confirmed/deleted/draft 过滤 | 已做 | 默认不读 archived/deleted；基础资产只读 confirmed；pending drafts 默认不进入 |
 | CTX-QA-1 | Service 行为测试 | 已做 | 覆盖项目边界、缺失 chapter/scene、confirmed 过滤、draft 默认排除、selectedDraftIds 纳入、sourceRefs、snapshot 落库 |
 | CTX-UI-1 | Context 预览 UI | 后置 | P1 后端 API 已可用；复杂 Context UI 后续再做 |
+
+## P2 后置任务
+
+| 编号 | 任务 | 状态 | 验收标准 |
+|---|---|---|---|
+| CTX-P2-1 | 基础资产生成上下文 | 后置 | 实现 generate_project_profile / generate_characters / generate_locations / generate_factions / generate_world_rules 等 purpose 的结构化上下文 |
+| CTX-P2-2 | 规划生成上下文 | 后置 | 实现 generate_volume / generate_chapter_plan / generate_scene_plan 的上下文策略 |
+| CTX-P2-3 | 摘要与记忆上下文 | 后置 | 实现 summarize_chapter / extract_memory 等 purpose，仍保持 confirmed first 与 sourceRefs 追溯 |
 
 ---
 
