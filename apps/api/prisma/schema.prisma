@@ -1362,10 +1362,14 @@ model PromptRender {
 model ContextSnapshot {
   id             String   @id @default(cuid())
   projectId      String
-  chapterId      String?
   purpose        String
+  targetType     String?
+  targetId       String?
+  chapterId      String?
+  sceneId        String?
   builderVersion String?
   tokenEstimate  Int?
+  metadata       Json?
   sourceRefs     Json?
   payload        Json
   createdAt      DateTime @default(now())
@@ -1374,7 +1378,10 @@ model ContextSnapshot {
   project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   generationTasks GenerationTask[]
 
-  @@index([projectId, createdAt])
+  @@index([projectId, purpose, createdAt])
+  @@index([projectId, targetType, targetId, createdAt])
+  @@index([projectId, chapterId, createdAt])
+  @@index([projectId, sceneId, createdAt])
 }
 
 model LLMProvider {

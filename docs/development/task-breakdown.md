@@ -444,23 +444,31 @@ P0 运行环境与规范
 
 ## 职责
 
-把项目资料转为模型可用上下文。
+在 AI 生成前构建结构化上下文快照，支持预览、落库和 sourceRefs 追溯。
 
 ## 开发规则
 
 1. Context Builder 独立模块，不写进 Generation Service。
-2. 每次生成必须保存 ContextSnapshot。
-3. MVP 先结构化上下文，不做复杂向量 RAG。
-4. 未 confirmed 的世界观/事实默认不进入上下文。
+2. Preview 只返回本次上下文，不落库。
+3. Snapshot 创建使用同一套构建规则，并保存 `ContextSnapshot`。
+4. P1 先结构化上下文，不做复杂向量 RAG / pgvector。
+5. 未 confirmed 的世界观、角色、地点、势力、物种、规则等基础资产默认不进入上下文。
+6. Pending draft 默认不进入上下文；只有 `selectedDraftIds` 或 `includeDrafts` 明确指定才进入。
+7. P1 不调用 LLM、不渲染 Prompt、不创建 GenerationTask。
 
 ## 任务
 
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
-| CTX-1 | ContextSnapshot preview | 待做 | 可预览上下文 payload |
-| CTX-2 | 项目信息上下文 | 待做 | 读取 Project 信息 |
-| CTX-3 | 角色/世界观上下文 | 待做 | 读取 selected/confirmed 资料 |
-| CTX-4 | 章节计划上下文 | 待做 | 读取 ChapterPlan |
+| CTX-DOC-1 | Context Builder 文档补齐 | 已做 | `docs/modules/context-builder.md` 明确职责、不负责项、读取范围、sourceRefs、confirmed/draft 规则和模块关系 |
+| CTX-SCHEMA-1 | ContextSnapshot P1 字段补齐 | 已做 | 支持 `purpose`、`targetType/targetId`、`chapterId`、`sceneId`、`payload`、`sourceRefs`、`tokenEstimate`、`metadata`、时间戳 |
+| CTX-API-1 | Preview API | 已做 | `POST /projects/:projectId/context/preview` 返回结构化 payload/sourceRefs，不落库 |
+| CTX-API-2 | Snapshot API | 已做 | `POST /projects/:projectId/context/snapshots` 可落库，`GET` list/get 可追溯 |
+| CTX-BUILD-1 | generate_chapter 上下文 | 已做 | 读取 Project、Volume、Chapter、ChapterPlan、前 1-3 章 confirmed ChapterSummary、当前章 Summary、Scene 计划/摘要/handoff、confirmed top assets、显式 drafts |
+| CTX-BUILD-2 | generate_scene 上下文 | 已做 | 读取 Project、Chapter、ChapterPlan、Scene、ScenePlan、前序 SceneSummary/Handoff、上一条 handoff、POV 角色、主地点、confirmed top assets、显式 drafts |
+| CTX-RULE-1 | confirmed/deleted/draft 过滤 | 已做 | 默认不读 archived/deleted；基础资产只读 confirmed；pending drafts 默认不进入 |
+| CTX-QA-1 | Service 行为测试 | 已做 | 覆盖项目边界、缺失 chapter/scene、confirmed 过滤、draft 默认排除、selectedDraftIds 纳入、sourceRefs、snapshot 落库 |
+| CTX-UI-1 | Context 预览 UI | 后置 | P1 后端 API 已可用；复杂 Context UI 后续再做 |
 
 ---
 
