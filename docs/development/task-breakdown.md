@@ -455,6 +455,7 @@ P0 运行环境与规范
 5. 未 confirmed 的世界观、角色、地点、势力、物种、规则等基础资产默认不进入上下文。
 6. Pending draft 默认不进入上下文；只有 `selectedDraftIds` 或 `includeDrafts` 明确指定才进入。
 7. P1 不调用 LLM、不渲染 Prompt、不创建 GenerationTask。
+8. Context Builder 使用 purpose registry/strategy 分发；未实现 purpose 必须清晰返回 P1 未实现错误，禁止 fallback 到章节/场景上下文。
 
 ## 任务
 
@@ -467,6 +468,7 @@ P0 运行环境与规范
 | CTX-API-2 | Snapshot API | 已做 | `POST /projects/:projectId/context/snapshots` 可落库，`GET` list/get 可追溯 |
 | CTX-BUILD-1 | generate_chapter 上下文 | 已做 | 读取 Project、Volume、Chapter、ChapterPlan、前 1-3 章 confirmed ChapterSummary、当前章 Summary、Scene 计划/摘要/handoff、confirmed top assets、显式 drafts |
 | CTX-BUILD-2 | generate_scene 上下文 | 已做 | 读取 Project、Chapter、ChapterPlan、Scene、ScenePlan、前序 SceneSummary/Handoff、上一条 handoff、POV 角色、主地点、confirmed top assets、显式 drafts |
+| CTX-BUILD-3 | Purpose registry 边界 | 已做 | 覆盖 Purpose Matrix 中的 purpose 类型；P1 只实现 generate_chapter/generate_scene；其他 purpose 返回清晰未实现错误且不 fallback |
 | CTX-RULE-1 | confirmed/deleted/draft 过滤 | 已做 | 默认不读 archived/deleted；基础资产只读 confirmed；pending drafts 默认不进入 |
 | CTX-QA-1 | Service 行为测试 | 已做 | 覆盖项目边界、缺失 chapter/scene、confirmed 过滤、draft 默认排除、selectedDraftIds 纳入、sourceRefs、snapshot 落库 |
 | CTX-UI-1 | Context 预览 UI | 后置 | P1 后端 API 已可用；复杂 Context UI 后续再做 |

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { BuildContextDto, ContextPurpose } from './dto/build-context.dto';
+import { BuildContextDto, contextPurposes, ContextPurpose } from './dto/build-context.dto';
 
 type SourceRef = { type: string; id: string; label?: string };
 type JsonRecord = Record<string, any>;
@@ -21,7 +21,7 @@ type BuiltContext = {
 };
 
 const builderVersion = 'context-builder-p1';
-const supportedPurposes = new Set<ContextPurpose>(['generate_chapter', 'generate_scene']);
+const knownPurposes = new Set<ContextPurpose>(contextPurposes);
 const latestOrderBy = [{ createdAt: 'desc' as const }];
 const chapterOrderBy = [{ orderIndex: 'asc' as const }, { createdAt: 'asc' as const }];
 const importanceOrderBy = [{ importance: 'desc' as const }, { createdAt: 'asc' as const }];
@@ -188,14 +188,19 @@ function pickDraft(draft: AnyRecord) {
 
 @Injectable()
 export class ContextBuilderService {
+  private readonly purposeBuilders: Partial<Record<ContextPurpose, (project: AnyRecord, dto: ReturnType<ContextBuilderService['normalizeDto']>) => Promise<BuiltContext>>> = {
+    generate_chapter: (project, dto) => this.buildGenerateChapter(project, dto),
+    generate_scene: (project, dto) => this.buildGenerateScene(project, dto),
+  };
+
   constructor(private readonly prisma: PrismaService) {}
 
   async preview(projectId: string, dto: BuildContextDto): Promise<BuiltContext> {
     const normalized = this.normalizeDto(dto);
+    const buildContext = this.purposeBuilders[normalized.purpose];
+    if (!buildContext) throw new BadRequestException(`Context purpose ${normalized.purpose} is not implemented in P1`);
     const project = await this.ensureProject(projectId);
-    if (normalized.purpose === 'generate_chapter') return this.buildGenerateChapter(project, normalized);
-    if (normalized.purpose === 'generate_scene') return this.buildGenerateScene(project, normalized);
-    throw new BadRequestException(`Purpose ${normalized.purpose} is not supported in Context Builder P1`);
+    return buildContext(project, normalized);
   }
 
   async createSnapshot(projectId: string, dto: BuildContextDto) {
@@ -233,7 +238,7 @@ export class ContextBuilderService {
   private normalizeDto(dto: BuildContextDto): Required<Pick<BuildContextDto, 'purpose' | 'includeDrafts' | 'selectedDraftIds' | 'previousChapterCount'>> & Pick<BuildContextDto, 'chapterId' | 'sceneId'> {
     if (!dto || typeof dto !== 'object') throw new BadRequestException('request body is required');
     const purpose = dto.purpose;
-    if (!supportedPurposes.has(purpose)) throw new BadRequestException(`purpose must be one of: ${Array.from(supportedPurposes).join(', ')}`);
+    if (!knownPurposes.has(purpose)) throw new BadRequestException(`purpose must be one of: ${contextPurposes.join(', ')}`);
     const selectedDraftIds = Array.isArray(dto.selectedDraftIds) ? [...new Set(dto.selectedDraftIds.map((id) => trimId(id)).filter(Boolean) as string[])] : [];
     return {
       purpose,

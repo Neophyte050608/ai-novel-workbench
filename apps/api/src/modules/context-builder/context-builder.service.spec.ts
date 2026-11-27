@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ContextBuilderService } from './context-builder.service';
 
 type AnyRecord = Record<string, any>;
@@ -196,6 +196,16 @@ async function testGenerateScenePreviewIncludesPreviousHandoffAndRelatedAssets()
   assert(hasSourceRef(preview, 'scene_handoff', 'scene-handoff-1'));
 }
 
+async function testUnimplementedPurposeReturnsP1BoundaryErrorWithoutFallback() {
+  const { prisma } = createPrismaStub();
+  const service = new ContextBuilderService(prisma as any);
+
+  await assert.rejects(
+    () => service.preview('project-1', { purpose: 'generate_characters' }),
+    (error) => error instanceof BadRequestException && error.message === 'Context purpose generate_characters is not implemented in P1',
+  );
+}
+
 async function testMissingSceneAndProjectBoundaryErrors() {
   const { prisma } = createPrismaStub();
   const service = new ContextBuilderService(prisma as any);
@@ -229,6 +239,7 @@ async function run() {
   await testGenerateChapterPreviewUsesConfirmedStructuredSources();
   await testDraftsOnlyEnterWhenExplicitlySelected();
   await testGenerateScenePreviewIncludesPreviousHandoffAndRelatedAssets();
+  await testUnimplementedPurposeReturnsP1BoundaryErrorWithoutFallback();
   await testMissingSceneAndProjectBoundaryErrors();
   await testCreateSnapshotPersistsBuiltContext();
   console.log('context builder service behavior tests passed');

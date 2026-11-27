@@ -56,6 +56,8 @@ type BuildContextDto = {
 
 P1 代码实现 `generate_chapter` 和 `generate_scene`。其他 purpose 先作为设计矩阵中的策略边界，后续随对应 AI 功能逐个实现；未实现 purpose 必须返回清晰错误，不允许悄悄 fallback 到章节/场景上下文。
 
+P1 代码采用 purpose registry/strategy 分发构建逻辑：已实现 purpose 绑定到对应 builder，未实现 purpose 统一返回 `Context purpose <x> is not implemented in P1`。
+
 
 ## Purpose Matrix / AI 任务上下文矩阵
 
