@@ -44,6 +44,13 @@ enum GenerationTaskStatus {
   canceled
 }
 
+enum GeneratedDraftStatus {
+  pending
+  applied
+  discarded
+  superseded
+}
+
 enum AttemptStatus {
   running
   succeeded
@@ -153,6 +160,7 @@ model Project {
   sceneSummaries      SceneSummary[]
   sceneHandoffs       SceneHandoff[]
   chapterSummaries    ChapterSummary[]
+  generatedDrafts     GeneratedDraft[]
 
   @@index([status])
   @@index([deletedAt])
@@ -1389,6 +1397,38 @@ model LLMProvider {
 
   @@index([projectId, isEnabled])
   @@index([projectId, isDefault])
+  @@index([deletedAt])
+}
+
+model GeneratedDraft {
+  id                String               @id @default(cuid())
+  projectId         String
+  targetType        String
+  targetId          String?
+  draftType         String
+  payload           Json
+  textPreview       String?
+  status            GeneratedDraftStatus @default(pending)
+  sourceTaskId      String?
+  feedback          String?
+  previousDraftId   String?
+  appliedTargetType String?
+  appliedTargetId   String?
+  appliedAt         DateTime?
+  discardedAt       DateTime?
+  supersededAt      DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  previousDraft GeneratedDraft?  @relation("GeneratedDraftSupersession", fields: [previousDraftId], references: [id], onDelete: SetNull)
+  nextDrafts    GeneratedDraft[] @relation("GeneratedDraftSupersession")
+
+  @@index([projectId, status])
+  @@index([projectId, targetType, targetId, status])
+  @@index([sourceTaskId])
+  @@index([previousDraftId])
   @@index([deletedAt])
 }
 

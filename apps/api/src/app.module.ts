@@ -20,6 +20,7 @@ import { WorldItemsModule } from './modules/world-items/world-items.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
 import { ScenesModule } from './modules/scenes/scenes.module';
 import { PlanningModule } from './modules/planning/planning.module';
+import { AiDraftsModule } from './modules/ai-drafts/ai-drafts.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { PlanningModule } from './modules/planning/planning.module';
     ChaptersModule,
     ScenesModule,
     PlanningModule,
+    AiDraftsModule,
   ],
 })
 export class AppModule {}

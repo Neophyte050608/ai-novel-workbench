@@ -416,18 +416,18 @@ P0 运行环境与规范
 | 编号 | 任务 | 状态 | 验收标准 |
 |---|---|---|---|
 | DRAFT-DOC-1 | AI Draft / Proposal 模块设计 | 已做 | `docs/modules/ai-drafts.md` 明确模块定位、非职责、核心概念、状态、动作、Apply 边界和分期 |
-| DRAFT-SCHEMA-1 | GeneratedDraft schema 草案评审 | 待做 | 字段覆盖 projectId、targetType、targetId、draftType、payload、textPreview、status、sourceTaskId、feedback、previousDraftId、appliedTargetId 等；不实现复杂审核状态 |
-| DRAFT-API-1 | 草稿基础 API | 待做 | 支持按 project/target 查询 pending 草稿，支持详情读取 |
-| DRAFT-API-2 | 草稿编辑 / 丢弃 | 待做 | pending 草稿可编辑 payload/textPreview，可标记 discarded |
-| DRAFT-API-3 | Apply 用例边界 | 待做 | Apply 不直接跨模块写表，而是调用目标领域模块；成功后记录 appliedTargetType/appliedTargetId |
-| DRAFT-API-4 | 反馈重生成入口 | 待做 | 可基于 draftId + feedback 创建新的 GenerationTask，旧草稿 superseded，新草稿 previousDraftId 指向旧草稿 |
-| DRAFT-UI-1 | 模块内草稿卡片 | 待做 | Chapter Writing Workspace 内可查看当前章节/场景相关草稿 |
-| DRAFT-UI-2 | 四个用户动作 UI | 待做 | UI 只展示应用、编辑、丢弃、带反馈重生成，不展示复杂审核按钮 |
-| DRAFT-INT-1 | ChapterVersion Apply 接入 | 待做 | 章节正文草稿应用后创建 ChapterVersion，不直接覆盖当前正文 |
-| DRAFT-INT-2 | SceneVersion / ScenePlan Apply 接入 | 待做 | 场景正文草稿写入 SceneVersion；场景计划草稿写入 ScenePlan |
-| DRAFT-INT-3 | ChapterSummary Apply 接入 | 待做 | 摘要草稿应用后写入 ChapterSummary，不自动写 MemoryRecord |
-| DRAFT-QA-1 | 生命周期测试 | 待做 | 覆盖 pending -> applied/discarded/superseded；非 pending 不可再次操作 |
-| DRAFT-QA-2 | 模块边界测试 | 待做 | 验证 Apply 走目标 Service，projectId 不一致时拒绝 |
+| DRAFT-SCHEMA-1 | GeneratedDraft schema 草案评审 | 已做 | 字段覆盖 projectId、targetType、targetId、draftType、payload、textPreview、status、sourceTaskId、feedback、previousDraftId、appliedTargetId 等；不实现复杂审核状态 |
+| DRAFT-API-1 | 草稿基础 API | 已做 | 支持按 project/target 查询 pending 草稿，支持详情读取 |
+| DRAFT-API-2 | 草稿编辑 / 丢弃 | 已做 | pending 草稿可编辑 payload/textPreview，可标记 discarded |
+| DRAFT-API-3 | Apply 用例边界 | 已做 | Apply 不直接跨模块写表，而是调用目标领域模块；成功后记录 appliedTargetType/appliedTargetId |
+| DRAFT-API-4 | 反馈重生成入口 | 已做 | P1 不调用 AI；基于 draftId + feedback 标记旧草稿 superseded，并创建 previousDraftId 指向旧草稿的新 pending mock 草稿 |
+| DRAFT-UI-1 | 模块内草稿卡片 | 已做 | Chapter Writing Workspace 内可查看当前章节/场景相关草稿 |
+| DRAFT-UI-2 | 四个用户动作 UI | 已做 | UI 只展示应用、编辑、丢弃、带反馈重生成，不展示复杂审核按钮 |
+| DRAFT-INT-1 | ChapterVersion Apply 接入 | 已做 | 章节正文草稿应用后创建 ChapterVersion，不直接覆盖当前正文 |
+| DRAFT-INT-2 | SceneVersion / ScenePlan Apply 接入 | 已做 | 场景正文草稿写入 SceneVersion；场景计划草稿写入 ScenePlan |
+| DRAFT-INT-3 | ChapterSummary Apply 接入 | 已做 | 摘要草稿应用后写入 ChapterSummary，不自动写 MemoryRecord |
+| DRAFT-QA-1 | 生命周期测试 | 已做 | 覆盖 pending -> applied/discarded/superseded；非 pending 不可再次操作 |
+| DRAFT-QA-2 | 模块边界测试 | 已做 | 验证 Apply 走目标 Service，projectId 不一致时拒绝 |
 
 ## P2 / P3 后置
 

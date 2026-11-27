@@ -1,9 +1,9 @@
 # AI Draft / Proposal 模块
 
-> 状态：设计稿 v0.1  
+> 状态：P1 implemented（最小可用闭环）  
 > 日期：2026-11-27  
 > 范围：AI 生成内容的草稿 / 建议态承接、用户审核动作、应用到正式领域表的边界  
-> 不包含：Prisma schema 实现、API 代码实现、UI 代码实现、复杂全局审核流、多级审批、AI 生成执行
+> 不包含：真实 AI 调用、PromptRender、Context Builder、复杂全局审核流、多级审批、多人审批、富文本发布
 
 ---
 
@@ -609,3 +609,30 @@ P3 仍应避免：
 每种创作判断一个状态
 把 AI 创作过程产品化成僵硬工单系统
 ```
+
+
+---
+
+## P1 实现说明（2026-11-27）
+
+已落地最小可用闭环：
+
+1. `apps/api/prisma/schema.prisma` 新增 `GeneratedDraft` 和 `GeneratedDraftStatus`。
+2. 新增 `apps/api/src/modules/ai-drafts`，提供：
+   - `GET /projects/:projectId/ai-drafts?targetType=&targetId=&status=`
+   - `POST /projects/:projectId/ai-drafts`
+   - `GET /projects/:projectId/ai-drafts/:draftId`
+   - `PATCH /projects/:projectId/ai-drafts/:draftId`
+   - `POST /projects/:projectId/ai-drafts/:draftId/discard`
+   - `POST /projects/:projectId/ai-drafts/:draftId/apply`
+   - `POST /projects/:projectId/ai-drafts/:draftId/regenerate`
+3. P1 apply 支持：
+   - `chapter_version`：`payload.content` 创建 `ChapterVersion`，仅在 `activate=true` 时更新 `Chapter.currentVersionId`。
+   - `scene_version`：`payload.content` 创建 `SceneVersion`，仅在 `activate=true` 时更新 `Scene.currentVersionId`。
+   - `scene_plan`：`payload` 创建 `ScenePlan`，仅在 `activate=true` 时更新 `Scene.currentPlanId`。
+   - `chapter_summary`：`payload.summary/keyEvents/characterChanges/newFacts` 创建 `ChapterSummary`，不自动写 MemoryRecord。
+4. `regenerate` P1 不调用 AI；它会把旧草稿标记为 `superseded`，并基于 feedback 创建新的 `pending` mock 草稿，`previousDraftId` 指向旧草稿。
+5. 前端新增 `features/ai-drafts` API/types，并在 Chapter Writing Workspace 右侧展示当前章节/当前场景相关 pending 草稿。
+6. UI 支持应用、编辑、丢弃、带反馈重生成；编辑使用大文本 JSON + preview + feedback SideSheet。
+
+仍保留后置范围：全局草稿队列、多领域草稿扩展、批量草稿、draft 显式参与 Context Builder、真实 AI 重生成。

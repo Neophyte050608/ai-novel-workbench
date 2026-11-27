@@ -5,6 +5,8 @@ import { IconDelete, IconEdit, IconPlus, IconRefresh } from '@douyinfe/semi-icon
 import { useUnsavedChangesGuard } from '../../shared/hooks/useUnsavedChangesGuard';
 import { readInitialNovelLocation, updateNovelLocation } from '../../shared/navigation/workspaceLocation';
 import { StatusTag, statusOptions } from '../../shared/ui/StatusTag';
+import { applyAiDraft, discardAiDraft, listAiDrafts, regenerateAiDraft, updateAiDraft } from '../ai-drafts/api';
+import type { GeneratedDraft } from '../ai-drafts/types';
 import { listCharacters, listLocations } from '../projects/api';
 import type { Character, Location } from '../projects/types';
 import {
@@ -47,6 +49,7 @@ type FormApi = Parameters<NonNullable<React.ComponentProps<typeof Form>['getForm
 type EditingChapterState = { mode: 'create' } | { mode: 'edit'; chapter: Chapter };
 type EditingSceneState = { mode: 'create' } | { mode: 'edit'; scene: Scene };
 type EditingSummaryState = { mode: 'create' } | { mode: 'edit'; summary: ChapterSummary };
+type EditingAiDraftState = { draft: GeneratedDraft; payloadText: string; textPreview: string; feedback: string };
 type DetailTab = 'flow' | 'body' | 'summaries' | 'versions' | 'overview';
 type SceneDetailTab = 'plan' | 'version' | 'summary' | 'handoff';
 type SceneResourceKind = 'plan' | 'version' | 'summary' | 'handoff';
@@ -110,6 +113,11 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   const [editingScene, setEditingScene] = useState<EditingSceneState>();
   const [editingSceneResource, setEditingSceneResource] = useState<EditingSceneResourceState>();
   const [editingSummary, setEditingSummary] = useState<EditingSummaryState>();
+  const [aiDrafts, setAiDrafts] = useState<GeneratedDraft[]>([]);
+  const [aiDraftsLoading, setAiDraftsLoading] = useState(false);
+  const [editingAiDraft, setEditingAiDraft] = useState<EditingAiDraftState>();
+  const [draftActionBusy, setDraftActionBusy] = useState<string>();
+  const [applyDraftActivate, setApplyDraftActivate] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formApi, setFormApi] = useState<FormApi>();
   const [sceneFormApi, setSceneFormApi] = useState<FormApi>();
@@ -138,6 +146,7 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
   const sceneOptions = useMemo(() => chapterScenes.map((scene) => ({ value: scene.id, label: scene.title || `场景 #${scene.orderIndex}` })), [chapterScenes]);
   const characterOptions = useMemo(() => characters.map((character) => ({ value: character.id, label: character.name })), [characters]);
   const locationOptions = useMemo(() => locations.map((location) => ({ value: location.id, label: location.name })), [locations]);
+  const relevantAiDrafts = useMemo(() => filterRelevantDrafts(aiDrafts, selectedChapterId, selectedSceneId), [aiDrafts, selectedChapterId, selectedSceneId]);
 
   const refreshChapters = useCallback(async () => {
     setLoading(true);
@@ -286,9 +295,24 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
     }
   }
 
+  const refreshAiDrafts = useCallback(async () => {
+    setAiDraftsLoading(true);
+    try {
+      const drafts = await listAiDrafts(projectId, { status: 'pending' });
+      setAiDrafts(drafts);
+    } catch (error) {
+      setAiDrafts([]);
+      Notification.error({ title: 'AI 草稿加载失败', content: String((error as Error).message ?? error) });
+    } finally {
+      setAiDraftsLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => { refreshAiDrafts(); }, [refreshAiDrafts]);
+
   async function refreshAfterSceneChange(preferredSceneId?: string) {
     if (!selectedChapter) return;
-    await Promise.all([refreshProfile(selectedChapter.id), refreshSelectedChapterScenes(selectedChapter.id, preferredSceneId), refreshAllChapterProgress()]);
+    await Promise.all([refreshProfile(selectedChapter.id), refreshSelectedChapterScenes(selectedChapter.id, preferredSceneId), refreshAllChapterProgress(), refreshAiDrafts()]);
     if (preferredSceneId) await refreshSelectedSceneDetail(preferredSceneId);
   }
 
@@ -551,6 +575,78 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
     unsavedGuard.guard(key, close);
   }
 
+  async function refreshAfterDraftApply(draft: GeneratedDraft) {
+    await refreshAiDrafts();
+    if (!selectedChapter) return;
+    await Promise.all([refreshChapters(), refreshProfile(selectedChapter.id), refreshSelectedChapterScenes(selectedChapter.id, selectedSceneId)]);
+    if (selectedSceneId && (draft.targetType === 'scene_version' || draft.targetType === 'scene_plan')) await refreshSelectedSceneDetail(selectedSceneId);
+  }
+
+  async function handleApplyAiDraft(draft: GeneratedDraft, activate: boolean) {
+    setDraftActionBusy(draft.id);
+    try {
+      await applyAiDraft(projectId, draft.id, { activate });
+      Notification.success({ title: activate ? 'AI 草稿已应用并设为当前' : 'AI 草稿已应用' });
+      await refreshAfterDraftApply(draft);
+    } catch (error) {
+      Notification.error({ title: 'AI 草稿应用失败', content: String((error as Error).message ?? error) });
+    } finally {
+      setDraftActionBusy(undefined);
+    }
+  }
+
+  async function handleDiscardAiDraft(draft: GeneratedDraft) {
+    setDraftActionBusy(draft.id);
+    try {
+      await discardAiDraft(projectId, draft.id);
+      Notification.success({ title: 'AI 草稿已丢弃' });
+      await refreshAiDrafts();
+    } catch (error) {
+      Notification.error({ title: 'AI 草稿丢弃失败', content: String((error as Error).message ?? error) });
+    } finally {
+      setDraftActionBusy(undefined);
+    }
+  }
+
+  async function saveAiDraftEdit() {
+    if (!editingAiDraft) return;
+    setDraftActionBusy(editingAiDraft.draft.id);
+    try {
+      await updateAiDraft(projectId, editingAiDraft.draft.id, {
+        payload: parseJsonObject(editingAiDraft.payloadText),
+        textPreview: editingAiDraft.textPreview,
+        feedback: editingAiDraft.feedback,
+      });
+      Notification.success({ title: 'AI 草稿已更新' });
+      unsavedGuard.resetDirty('ai-draft');
+      setEditingAiDraft(undefined);
+      await refreshAiDrafts();
+    } catch (error) {
+      Notification.error({ title: 'AI 草稿编辑失败', content: String((error as Error).message ?? error) });
+    } finally {
+      setDraftActionBusy(undefined);
+    }
+  }
+
+  async function handleRegenerateAiDraft(draft: GeneratedDraft) {
+    const feedback = window.prompt('写下你希望新草稿怎么改。P1 会基于反馈创建一个新的 pending 草稿 mock，不会调用 AI。', draft.feedback ?? '');
+    if (feedback === null) return;
+    if (!feedback.trim()) {
+      Notification.warning({ title: '请先填写反馈' });
+      return;
+    }
+    setDraftActionBusy(draft.id);
+    try {
+      await regenerateAiDraft(projectId, draft.id, { feedback });
+      Notification.success({ title: '已基于反馈创建新草稿（P1 mock，未调用 AI）' });
+      await refreshAiDrafts();
+    } catch (error) {
+      Notification.error({ title: '反馈重生成失败', content: String((error as Error).message ?? error) });
+    } finally {
+      setDraftActionBusy(undefined);
+    }
+  }
+
   function handleSuggestionAction(item: NextSuggestion) {
     if (item.kind === 'createScene') {
       setEditingScene({ mode: 'create' });
@@ -668,7 +764,10 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
         </div>}
       </Card>
 
-      <ContextPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onIssueClick={focusIssue} onSuggestionClick={handleSuggestionAction} />
+      <div className="chapter-workspace__context" style={{ display: 'grid', gap: 12 }}>
+        <AiDraftPanel drafts={relevantAiDrafts} loading={aiDraftsLoading} busyDraftId={draftActionBusy} activate={applyDraftActivate} setActivate={setApplyDraftActivate} onApply={handleApplyAiDraft} onEdit={(draft) => setEditingAiDraft({ draft, payloadText: safeStringify(draft.payload), textPreview: draft.textPreview ?? '', feedback: draft.feedback ?? '' })} onDiscard={handleDiscardAiDraft} onRegenerate={handleRegenerateAiDraft} />
+        <ContextPanel chapter={selectedChapter} profile={profile} progress={currentProgress} onIssueClick={focusIssue} onSuggestionClick={handleSuggestionAction} />
+      </div>
     </div>
 
     <SideSheet title={editingChapter?.mode === 'create' ? '新增章节' : '编辑章节'} visible={Boolean(editingChapter)} onCancel={() => closeSheet('chapter', () => setEditingChapter(undefined))} width={560} footer={<SheetFooter onCancel={() => closeSheet('chapter', () => setEditingChapter(undefined))} onSave={saveChapter} saving={saving} />}>
@@ -707,6 +806,25 @@ export function ChapterWorkspace({ projectId }: { projectId: string }) {
         </div> : null}
         <SceneResourceForm editing={editingSceneResource} formApiSetter={setResourceFormApi} currentVersionId={selectedSceneProfile?.scene.currentVersionId} sceneVersionOptions={sceneVersions.map((version) => ({ value: version.id, label: versionLabel(version) }))} sceneOptions={sceneOptions} onDirty={() => { setResourceSaveError(undefined); unsavedGuard.markDirty('scene-resource'); }} />
       </> : null}
+    </SideSheet>
+
+    <SideSheet title="编辑 AI 草稿/建议" visible={Boolean(editingAiDraft)} onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} width="min(82vw, 920px)" footer={<SheetFooter onCancel={() => closeSheet('ai-draft', () => setEditingAiDraft(undefined))} onSave={saveAiDraftEdit} saving={Boolean(draftActionBusy && editingAiDraft?.draft.id === draftActionBusy)} />}>
+      {editingAiDraft ? <div style={{ display: 'grid', gap: 14 }}>
+        <Text type="tertiary">只能编辑 pending 草稿的 payload、展示预览和反馈；状态、归属和应用目标由系统控制。</Text>
+        <div>
+          <label htmlFor="ai-draft-preview" style={fieldLabelStyle}>预览文案</label>
+          <textarea id="ai-draft-preview" value={editingAiDraft.textPreview} onChange={(event) => { setEditingAiDraft({ ...editingAiDraft, textPreview: event.target.value }); unsavedGuard.markDirty('ai-draft'); }} style={textareaStyle('18vh')} />
+        </div>
+        <div>
+          <label htmlFor="ai-draft-payload" style={fieldLabelStyle}>Payload JSON</label>
+          <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 6 }}>应用时会按 targetType 解释。chapter_version/scene_version 需要 payload.content，chapter_summary 需要 payload.summary。</Text>
+          <textarea id="ai-draft-payload" value={editingAiDraft.payloadText} onChange={(event) => { setEditingAiDraft({ ...editingAiDraft, payloadText: event.target.value }); unsavedGuard.markDirty('ai-draft'); }} style={textareaStyle('42vh')} />
+        </div>
+        <div>
+          <label htmlFor="ai-draft-feedback" style={fieldLabelStyle}>反馈（用于后续重生成）</label>
+          <textarea id="ai-draft-feedback" value={editingAiDraft.feedback} onChange={(event) => { setEditingAiDraft({ ...editingAiDraft, feedback: event.target.value }); unsavedGuard.markDirty('ai-draft'); }} style={textareaStyle('16vh')} />
+        </div>
+      </div> : null}
     </SideSheet>
 
     <SideSheet title={editingSummary?.mode === 'create' ? '新增章节摘要' : '编辑章节摘要'} visible={Boolean(editingSummary)} onCancel={() => closeSheet('summary', () => setEditingSummary(undefined))} width={680} footer={<SheetFooter onCancel={() => closeSheet('summary', () => setEditingSummary(undefined))} onSave={saveSummary} saving={summarySaving} />}>
@@ -1033,6 +1151,46 @@ function SummariesPanel({ summaries, currentSummary, currentVersionId, rollingUp
   </div>;
 }
 
+
+function AiDraftPanel({ drafts, loading, busyDraftId, activate, setActivate, onApply, onEdit, onDiscard, onRegenerate }: {
+  drafts: GeneratedDraft[];
+  loading: boolean;
+  busyDraftId?: string;
+  activate: boolean;
+  setActivate: (value: boolean) => void;
+  onApply: (draft: GeneratedDraft, activate: boolean) => void;
+  onEdit: (draft: GeneratedDraft) => void;
+  onDiscard: (draft: GeneratedDraft) => void;
+  onRegenerate: (draft: GeneratedDraft) => void;
+}) {
+  return <Card title="AI 草稿/建议" bodyStyle={{ padding: 12 }}>
+    <Text type="tertiary" size="small" style={{ display: 'block', marginBottom: 10 }}>只显示当前章节和当前场景相关的 pending 草稿。P1 反馈重生成会创建新草稿 mock，不调用 AI。</Text>
+    <Checkbox checked={activate} onChange={(event) => setActivate(Boolean(event.target.checked))} style={{ marginBottom: 10 }}>应用版本类草稿后设为当前</Checkbox>
+    {loading ? <Skeleton placeholder={<Skeleton.Paragraph rows={4} />} loading /> : drafts.length === 0 ? <EmptyState title="暂无相关 AI 草稿" description="后续生成任务会把候选正文、场景计划和摘要放到这里等待审核。" /> : <div style={{ display: 'grid', gap: 10 }}>
+      {drafts.map((draft) => {
+        const canActivate = draft.targetType === 'chapter_version' || draft.targetType === 'scene_version' || draft.targetType === 'scene_plan';
+        const busy = busyDraftId === draft.id;
+        return <article key={draft.id} style={{ padding: 12, border: '1px solid var(--semi-color-border)', borderRadius: 12 }}>
+          <Space wrap spacing={6} style={{ rowGap: 6 }}>
+            <Tag color="blue">{draftTargetLabel(draft.targetType)}</Tag>
+            <Tag>{draft.draftType}</Tag>
+            <Tag color="green">{draft.status}</Tag>
+            <Text type="tertiary" size="small">{formatDate(draft.updatedAt)}</Text>
+          </Space>
+          <Paragraph ellipsis={{ rows: 4, showTooltip: true }} style={{ margin: '8px 0', whiteSpace: 'pre-wrap' }}>{draft.textPreview || draftPayloadPreview(draft.payload)}</Paragraph>
+          {draft.feedback ? <Text type="tertiary" size="small" ellipsis={{ showTooltip: true }}>反馈：{draft.feedback}</Text> : null}
+          <Space wrap style={{ marginTop: 10 }}>
+            <Button size="small" theme="solid" type="primary" loading={busy} onClick={() => onApply(draft, canActivate ? activate : false)}>应用</Button>
+            <Button size="small" onClick={() => onEdit(draft)}>编辑</Button>
+            <Button size="small" onClick={() => onRegenerate(draft)}>带反馈重生成</Button>
+            <Popconfirm title="确认丢弃这个 AI 草稿？" content="丢弃不会物理删除，只会退出 pending 列表。" onConfirm={() => onDiscard(draft)}><Button size="small" type="danger" theme="borderless" loading={busy}>丢弃</Button></Popconfirm>
+          </Space>
+        </article>;
+      })}
+    </div>}
+  </Card>;
+}
+
 function ContextPanel({ chapter, profile, progress, onIssueClick, onSuggestionClick }: { chapter?: Chapter; profile?: ChapterProfile; progress?: SceneProgress; onIssueClick: (issue: WritingIssue) => void; onSuggestionClick: (item: NextSuggestion) => void }) {
   const next = nextSuggestions(chapter, profile, progress);
   return <Card title="上下文 / 下一步" className="chapter-workspace__context" bodyStyle={{ padding: 12 }}>
@@ -1318,6 +1476,40 @@ function displayValue(value: unknown): string {
   if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join('、');
   if (typeof value === 'object') return Object.entries(value as Record<string, unknown>).filter(([, entry]) => displayValue(entry)).map(([key, entry]) => `${key}：${displayValue(entry)}`).join('\n');
   return String(value);
+}
+
+function filterRelevantDrafts(drafts: GeneratedDraft[], chapterId?: string, sceneId?: string) {
+  return drafts.filter((draft) => {
+    if (draft.status !== 'pending') return false;
+    if (draft.targetType === 'chapter_version' || draft.targetType === 'chapter_summary') return Boolean(chapterId && draft.targetId === chapterId);
+    if (draft.targetType === 'scene_version' || draft.targetType === 'scene_plan') return Boolean(sceneId && draft.targetId === sceneId);
+    return false;
+  });
+}
+
+function parseJsonObject(text: string) {
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Payload 必须是 JSON object');
+  return parsed;
+}
+
+function safeStringify(value: unknown) {
+  return JSON.stringify(value ?? {}, null, 2);
+}
+
+function draftPayloadPreview(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Record<string, unknown>;
+  const content = typeof record.content === 'string' ? record.content : typeof record.summary === 'string' ? record.summary : '';
+  return content || safeStringify(value);
+}
+
+function draftTargetLabel(targetType: string) {
+  if (targetType === 'chapter_version') return '章节正文';
+  if (targetType === 'scene_version') return '场景正文';
+  if (targetType === 'scene_plan') return '场景计划';
+  if (targetType === 'chapter_summary') return '章节摘要';
+  return targetType;
 }
 
 function entityLabel(entity: Record<string, unknown> | null | undefined, fallback?: string | null) {
